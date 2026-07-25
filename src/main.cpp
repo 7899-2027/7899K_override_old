@@ -14,6 +14,8 @@ using namespace vex;
 // A global instance of competition
 competition Competition;
 
+controller Controller1;
+
 // define your global instances of motors and other devices here
 
 brain Brain;
@@ -22,10 +24,10 @@ inertial Gyroscope(PORT1);
 
 aivision AISensor(PORT8);
 
-motor LeftFront(PORT2, ratio18_1, false);
-motor LeftBack(PORT4, ratio18_1, false);
-motor RightFront(PORT3, ratio18_1, true);
-motor RightBack(PORT5, ratio18_1, true);
+motor LeftFront(PORT2, ratio18_1, true);
+motor LeftBack(PORT1, ratio18_1, true);
+motor RightFront(PORT4, ratio18_1, false);
+motor RightBack(PORT3, ratio18_1, false);
 
 // FUNCTIONS
 
@@ -35,6 +37,7 @@ int gR = 0.5;
 int x = 0;
 
 void drive(double lspeed, double rspeed, int wt)
+
 {
   lspeed = lspeed * 120;
   rspeed = rspeed * 120;
@@ -44,6 +47,106 @@ void drive(double lspeed, double rspeed, int wt)
   RightFront.spin(forward, rspeed, voltageUnits::mV);
   RightBack.spin(forward, rspeed, voltageUnits::mV);
   task::sleep(wt);
+}
+
+// Health of the robot functions
+int YOFFSET = 20;   // First Line position
+int NewLineY = 20;  // Buffer Between Lines
+int LineNumber = 0; // What row the line is on(increments every new motor)
+
+void MotorDisplay(int y, double curr, double temp)
+{
+  Brain.Screen.setFillColor(transparent);
+  Brain.Screen.printAt(5, YOFFSET + LineNumber * NewLineY, "Current: %.1fA", curr);
+  if (curr < 1)
+    Brain.Screen.setFillColor(green);
+  else if (curr >= 1 && curr <= 2.5)
+    Brain.Screen.setFillColor(yellow);
+  else
+    Brain.Screen.setFillColor(red);
+  Brain.Screen.drawRectangle(140, YOFFSET + LineNumber * NewLineY - 15, 15, 15);
+
+  Brain.Screen.setFillColor(transparent);
+  Brain.Screen.printAt(160, YOFFSET + LineNumber * NewLineY, "Temp: %.1fC", temp);
+  if (temp < 45)
+    Brain.Screen.setFillColor(green);
+  else if (temp <= 50 && temp >= 45)
+    // TRUE and TRUE --> True
+    // TRUE and FALSE --> False
+    // FALSE and FALSE --> False
+    Brain.Screen.setFillColor(yellow);
+  else
+    Brain.Screen.setFillColor(red);
+  Brain.Screen.drawRectangle(275, YOFFSET + LineNumber * NewLineY - 15, 15, 15);
+  Brain.Screen.setFillColor(transparent);
+}
+
+void Display()
+{
+  double leftFrontCurr = LeftFront.current(amp);
+  double leftFrontTemp = LeftFront.temperature(celsius);
+
+  double leftBackCurr = LeftBack.current(amp);
+  double leftBackTemp = LeftBack.temperature(celsius);
+
+  double rightFrontCurr = RightFront.current(amp);
+  double rightFrontTemp = RightFront.temperature(celsius);
+
+  double rightBackCurr = RightBack.current(amp);
+  double rightBackTemp = RightBack.temperature(celsius);
+
+  LineNumber++;
+  if (LeftFront.installed())
+  {
+    MotorDisplay(0, leftFrontCurr, leftFrontTemp);
+    Brain.Screen.printAt(300, YOFFSET + LineNumber * NewLineY, "LeftFront");
+  }
+  else
+  {
+    Brain.Screen.setPenColor(red);
+    Brain.Screen.printAt(5, YOFFSET + LineNumber * NewLineY, "LeftFront Problem");
+    Brain.Screen.setPenColor(white);
+  }
+  LineNumber++;
+
+  if (LeftBack.installed())
+  {
+    MotorDisplay(0, leftBackCurr, leftBackTemp);
+    Brain.Screen.printAt(300, YOFFSET + LineNumber * NewLineY, "LeftBack");
+  }
+  else
+  {
+    Brain.Screen.setPenColor(red);
+    Brain.Screen.printAt(5, YOFFSET + LineNumber * NewLineY, "LeftBack Problem");
+    Brain.Screen.setPenColor(white);
+  }
+  LineNumber++;
+
+  if (RightFront.installed())
+  {
+    MotorDisplay(60, rightFrontCurr, rightFrontTemp);
+    Brain.Screen.printAt(300, YOFFSET + LineNumber * NewLineY, "RightFront");
+  }
+  else
+  {
+    Brain.Screen.setPenColor(red);
+    Brain.Screen.printAt(5, YOFFSET + LineNumber * NewLineY, "RightFront Problem");
+    Brain.Screen.setPenColor(white);
+  }
+  LineNumber++;
+
+  if (RightBack.installed())
+  {
+    MotorDisplay(60, rightBackCurr, rightBackTemp);
+    Brain.Screen.printAt(300, YOFFSET + LineNumber * NewLineY, "RightBack");
+  }
+  else
+  {
+    Brain.Screen.setPenColor(red);
+    Brain.Screen.printAt(5, YOFFSET + LineNumber * NewLineY, "RightBack Problem");
+    Brain.Screen.setPenColor(white);
+  }
+  LineNumber = 0;
 }
 
 void inchDrive(float target, int speed)
@@ -134,8 +237,19 @@ void autonomous(void)
 void usercontrol(void)
 {
   // User control code here, inside the loop
+  int count = 0;
   while (1)
   {
+
+    drive(Controller1.Axis3.position(), Controller1.Axis2.position(), 10);
+
+    count++;
+    if (count == 25)
+    {
+      Display();
+      count = 0;
+    }
+
     // This is the main execution loop for the user control program.
     // Each time through the loop your program should update motor + servo
     // values based on feedback from the joysticks.
