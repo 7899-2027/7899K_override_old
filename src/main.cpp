@@ -20,14 +20,14 @@ controller Controller1;
 
 brain Brain;
 
-inertial Gyroscope(PORT1);
+inertial Gyro(PORT6);
 
-aivision AISensor(PORT8);
+aivision AISensor(PORT5);
 
-motor LeftFront(PORT2, ratio18_1, true);
-motor LeftBack(PORT1, ratio18_1, true);
-motor RightFront(PORT4, ratio18_1, false);
-motor RightBack(PORT3, ratio18_1, false);
+motor LeftFront(PORT3, ratio18_1, true);
+motor LeftBack(PORT4, ratio18_1, true);
+motor RightFront(PORT1, ratio18_1, false);
+motor RightBack(PORT2, ratio18_1, false);
 
 // FUNCTIONS
 
@@ -36,17 +36,33 @@ int dia = 3.25;
 int gR = 0.5;
 int x = 0;
 
-void drive(double lspeed, double rspeed, int wt)
-
+void tankDrive(double lspeed, double rspeed, int wt)
 {
   lspeed = lspeed * 120;
   rspeed = rspeed * 120;
   LeftFront.spin(forward, lspeed, voltageUnits::mV);
-
   LeftBack.spin(forward, lspeed, voltageUnits::mV);
   RightFront.spin(forward, rspeed, voltageUnits::mV);
   RightBack.spin(forward, rspeed, voltageUnits::mV);
   task::sleep(wt);
+}
+
+void arcadeDrive()
+{
+  int throttle = Controller1.Axis3.position(percent); // Forward/Backward
+  int turn = Controller1.Axis2.position(percent);     // Left/Right
+
+  // 2. Apply a 5% deadzone to prevent joystick drift
+  if (abs(throttle) < 5)
+    throttle = 0;
+  if (abs(turn) < 5)
+    turn = 0;
+
+  // 3. Combine inputs and spin the motors
+  LeftFront.spin(forward, throttle + turn, percent);
+  LeftBack.spin(forward, throttle + turn, percent);
+  RightFront.spin(forward, throttle - turn, percent);
+  RightBack.spin(forward, throttle - turn, percent);
 }
 
 // Health of the robot functions
@@ -159,21 +175,21 @@ void inchDrive(float target, int speed)
 
   if (target >= 0)
   {
-    while (x <= target)
+    while (x <= target) // While we still need to go
     {
-      drive(speed, speed, 10);
-      x = LeftFront.position(rev) * dia * pi * gR;
+      tankDrive(speed, speed, 10);                 // drive
+      x = LeftFront.position(rev) * dia * pi * gR; // update x
     }
   }
-  else if (target < 0)
+  else if (target < 0) // same but reverse
   {
     while (x <= fabs(target))
     {
-      drive(-speed, -speed, 10);
+      tankDrive(-speed, -speed, 10);
       x = -LeftFront.position(rev) * dia * pi * gR;
     }
   }
-  drive(0, 0, 0);
+  tankDrive(0, 0, 0);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -192,8 +208,8 @@ void pre_auton(void)
   // All activities that occur before the competition starts
   // Example: clearing encoders, setting servo positions, ...
 
-  Gyroscope.calibrate();
-  while (Gyroscope.isCalibrating())
+  Gyro.calibrate();
+  while (Gyro.isCalibrating())
   {
     wait(20, msec);
   }
@@ -241,7 +257,7 @@ void usercontrol(void)
   while (1)
   {
 
-    drive(Controller1.Axis3.position(), Controller1.Axis2.position(), 10);
+    arcadeDrive();
 
     count++;
     if (count == 25)
