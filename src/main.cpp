@@ -49,8 +49,12 @@ void tankDrive(double lspeed, double rspeed, int wt)
 
 void arcadeDrive()
 {
-  int throttle = Controller1.Axis3.position(percent); // Forward/Backward
-  int turn = Controller1.Axis2.position(percent);     // Left/Right
+  int throttle = Controller1.Axis3.position(percent);   // Forward/Backward
+  int turn = Controller1.Axis1.position(percent) * 0.5; // Left/Right
+  int leftSpeed = throttle + turn;
+  int rightSpeed = throttle - turn;
+
+  int wt;
 
   // 2. Apply a 5% deadzone to prevent joystick drift
   if (abs(throttle) < 5)
@@ -61,8 +65,19 @@ void arcadeDrive()
   // 3. Combine inputs and spin the motors
   LeftFront.spin(forward, throttle + turn, percent);
   LeftBack.spin(forward, throttle + turn, percent);
-  RightFront.spin(forward, throttle - turn, percent);
-  RightBack.spin(forward, throttle - turn, percent);
+  RightFront.spin(forward, (throttle - turn), percent);
+  RightBack.spin(forward, (throttle - turn), percent);
+
+  // limit motor speeds to -100 to 100%
+  if (leftSpeed > 100)
+    leftSpeed = 100;
+  if (leftSpeed < -100)
+    leftSpeed = -100;
+
+  if (rightSpeed > 100)
+    rightSpeed = 100;
+  if (rightSpeed < -100)
+    rightSpeed = -100;
 }
 
 // Health of the robot functions
