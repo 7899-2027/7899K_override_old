@@ -31,10 +31,10 @@ motor RightBack(PORT2, ratio18_1, false);
 
 // FUNCTIONS
 
-int pi = 3.14;
-int dia = 3.25;
-int gR = 0.5;
-int x = 0;
+double pi = 3.14;
+double dia = 3.25;
+double gR = 0.5;
+double x = 0;
 
 void tankDrive(double lspeed, double rspeed, int wt)
 {
@@ -48,6 +48,7 @@ void tankDrive(double lspeed, double rspeed, int wt)
 }
 
 void arcadeDrive()
+
 {
   int throttle = Controller1.Axis3.position(percent);   // Forward/Backward
   int turn = Controller1.Axis1.position(percent) * 0.5; // Left/Right
@@ -80,6 +81,14 @@ void arcadeDrive()
     rightSpeed = -100;
 }
 
+void driveBrake()
+
+{
+  LeftFront.stop();
+  LeftBack.stop();
+  RightFront.stop();
+  LeftBack.stop();
+}
 // Health of the robot functions
 int YOFFSET = 20;   // First Line position
 int NewLineY = 20;  // Buffer Between Lines
@@ -249,10 +258,9 @@ void pre_auton(void)
 
 void autonomous(void)
 {
-  // ..........................................................................
-  // Insert autonomous user code here.
-
-  // ..........................................................................
+  inchDrive(36, 30);
+  wait(500, msec);
+  inchDrive(-36, 30);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -265,6 +273,9 @@ void autonomous(void)
 /*  You must modify the code to add your own robot specific commands here.   */
 /*---------------------------------------------------------------------------*/
 
+bool arcadeMode = true;
+bool lastButtonState = false;
+
 void usercontrol(void)
 {
   // User control code here, inside the loop
@@ -272,7 +283,22 @@ void usercontrol(void)
   while (1)
   {
 
-    arcadeDrive();
+    bool buttonState = Controller1.ButtonY.pressing();
+
+    if (buttonState && !lastButtonState)
+    {
+      arcadeMode = !arcadeMode; // Switch modes
+    }
+    lastButtonState = buttonState;
+
+    if (arcadeMode)
+    {
+      arcadeDrive();
+    }
+    else
+    {
+      tankDrive(Controller1.Axis3.position(), Controller1.Axis2.position(), 10);
+    }
 
     count++;
     if (count == 25)
