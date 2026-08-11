@@ -32,18 +32,18 @@ motor RightBack(PORT2, ratio18_1, false);
 // FUNCTIONS
 
 double pi = 3.14;
-double dia = 3.25;
-double gR = 0.5;
+double dia = 3.25; // wheel diameter
+double gR = 0.6;   // 36/60 gear ratio
 double x = 0;
 
 void tankDrive(double lspeed, double rspeed, int wt)
 {
-  lspeed = lspeed * 120;
-  rspeed = rspeed * 120;
-  LeftFront.spin(forward, lspeed, voltageUnits::mV);
-  LeftBack.spin(forward, lspeed, voltageUnits::mV);
-  RightFront.spin(forward, rspeed, voltageUnits::mV);
-  RightBack.spin(forward, rspeed, voltageUnits::mV);
+  lspeed = lspeed * 1;
+  rspeed = rspeed * 1;
+  LeftFront.spin(forward, lspeed, pct);
+  LeftBack.spin(forward, lspeed, pct);
+  RightFront.spin(forward, rspeed, pct);
+  RightBack.spin(forward, rspeed, pct);
   task::sleep(wt);
 }
 
@@ -82,13 +82,13 @@ void arcadeDrive()
 }
 
 void driveBrake()
-
 {
-  LeftFront.stop();
-  LeftBack.stop();
-  RightFront.stop();
-  LeftBack.stop();
+  LeftFront.stop(brakeType::brake);
+  LeftBack.stop(brakeType::brake);
+  RightFront.stop(brakeType::brake);
+  RightBack.stop(brakeType::brake);
 }
+
 // Health of the robot functions
 int YOFFSET = 20;   // First Line position
 int NewLineY = 20;  // Buffer Between Lines
