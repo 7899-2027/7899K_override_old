@@ -20,14 +20,14 @@ controller Controller1;
 
 brain Brain;
 
-inertial Gyro(PORT6);
+inertial Gyro(PORT19);
 
 aivision AISensor(PORT5);
 
-motor LeftFront(PORT3, ratio18_1, true);
-motor LeftBack(PORT4, ratio18_1, true);
-motor RightFront(PORT1, ratio18_1, false);
-motor RightBack(PORT2, ratio18_1, false);
+motor LeftFront(PORT20, ratio18_1, true);
+motor LeftBack(PORT10, ratio18_1, true);
+motor RightFront(PORT11, ratio18_1, false);
+motor RightBack(PORT3, ratio18_1, false);
 
 // FUNCTIONS
 
@@ -35,6 +35,9 @@ double pi = 3.14;
 double dia = 3.25; // wheel diameter
 double gR = 0.6;   // 36/60 gear ratio
 double x = 0;
+
+double DRIVE_KP = 0.8;
+double MAX_CORRECTION = 5; // Maximum gyro correction in percent
 
 void tankDrive(double lspeed, double rspeed, int wt)
 {
@@ -189,31 +192,102 @@ void Display()
   LineNumber = 0;
 }
 
-void inchDrive(float target, int speed)
+void inchDrive(double target, int speed)
 {
-
-  // TODO: SLOW DOWN BEFORE TARGET
-
+  // Reset the left and right motor encoders.
   LeftFront.setPosition(0, rev);
-  x = LeftFront.position(rev) * dia * pi * gR;
+  RightFront.setPosition(0, rev);
 
-  if (target >= 0)
+  // Reset the gyro to 0 degrees.
+  Gyro.setRotation(0, degrees);
+
+  double distance = 0;
+
+  // Keep driving until we reach the requested distance.
+  // fabs() makes the target positive so this works for both
+  // forward and backward driving.
+  while (distance < fabs(target))
   {
-    while (x <= target) // While we still need to go
+    // Motor revolutions × wheel circumference × gear ratio = inches.
+    double leftDistance =
+        LeftFront.position(rev) * dia * pi * gR;
+
+    double rightDistance =
+        RightFront.position(rev) * dia * pi * gR;
+
+    // Average the distance from both sides.
+    distance = (fabs(leftDistance) + fabs(rightDistance)) / 2.0;
+
+    // Read the robot's current heading from the gyro.
+    double currentHeading = Gyro.rotation(degrees);
+    double error = currentHeading;
+
+    // Convert the heading error into a motor-speed correction.
+    // A larger heading error produces a larger correction.
+    double correction = error * DRIVE_KP;
+
+    // Prevent the gyro correction from becoming too large.
+    // This keeps one side from being slowed down or sped up excessively.
+    if (correction > MAX_CORRECTION)
+      correction = MAX_CORRECTION;
+
+    if (correction < -MAX_CORRECTION)
+      correction = -MAX_CORRECTION;
+
+    // Variables for the final left and right motor speeds.
+    double leftSpeed;
+    double rightSpeed;
+
+    // Check whether we are driving forward or backward.
+    if (target > 0)
     {
-      tankDrive(speed, speed, 10);                 // drive
-      x = LeftFront.position(rev) * dia * pi * gR; // update x
+      // Forward driving.
+      //
+      // The correction changes the two sides in opposite directions
+      // to steer the robot back toward its original heading.
+      leftSpeed = speed - correction;
+      rightSpeed = speed + correction;
     }
-  }
-  else if (target < 0) // same but reverse
-  {
-    while (x <= fabs(target))
+    else
     {
-      tankDrive(-speed, -speed, 10);
-      x = -LeftFront.position(rev) * dia * pi * gR;
+      // Backward driving.
+      //
+      // The correction is reversed appropriately so the gyro
+      // still keeps the robot traveling along the original heading.
+      leftSpeed = -speed - correction;
+      rightSpeed = -speed + correction;
     }
+
+    // Make sure the left speed stays between -100% and +100%.
+    if (leftSpeed > 100)
+      leftSpeed = 100;
+
+    if (leftSpeed < -100)
+      leftSpeed = -100;
+
+    // Make sure the right speed stays between -100% and +100%.
+    if (rightSpeed > 100)
+      rightSpeed = 100;
+
+    if (rightSpeed < -100)
+      rightSpeed = -100;
+
+    // Send the corrected speeds to the left motors.
+    LeftFront.spin(forward, leftSpeed, pct);
+    LeftBack.spin(forward, leftSpeed, pct);
+
+    // Send the corrected speeds to the right motors.
+    RightFront.spin(forward, rightSpeed, pct);
+    RightBack.spin(forward, rightSpeed, pct);
+
+    // Wait 10 milliseconds before checking the sensors again.
+    // This creates a feedback loop that constantly corrects drifting.
+    wait(10, msec);
   }
-  tankDrive(0, 0, 0);
+
+  // The target distance has been reached.
+  // Stop all four motors using the brake setting.
+  driveBrake();
 }
 
 /*---------------------------------------------------------------------------*/
@@ -231,12 +305,17 @@ void pre_auton(void)
 
   // All activities that occur before the competition starts
   // Example: clearing encoders, setting servo positions, ...
-
   Gyro.calibrate();
+
   while (Gyro.isCalibrating())
   {
     wait(20, msec);
   }
+
+  // Let the sensor settle after calibration
+  wait(500, msec);
+
+  Gyro.setRotation(0, degrees);
 
   LeftFront.resetPosition();
   RightFront.resetPosition();
@@ -258,9 +337,9 @@ void pre_auton(void)
 
 void autonomous(void)
 {
-  inchDrive(36, 30);
+  inchDrive(20, 20);
   wait(500, msec);
-  inchDrive(-36, 30);
+  inchDrive(-20, 20);
 }
 
 /*---------------------------------------------------------------------------*/
