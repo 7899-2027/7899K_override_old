@@ -31,7 +31,7 @@ motor RightBack(PORT3, ratio18_1, false);
 
 // FUNCTIONS
 
-double pi = 3.14;
+double pi = M_PI;
 double dia = 3.25; // wheel diameter
 double gR = 0.6;   // 36/60 gear ratio
 double x = 0;
@@ -51,37 +51,28 @@ void tankDrive(double lspeed, double rspeed, int wt)
 }
 
 void arcadeDrive()
-
 {
-  int throttle = Controller1.Axis3.position(percent);   // Forward/Backward
-  int turn = Controller1.Axis1.position(percent) * 0.5; // Left/Right
-  int leftSpeed = throttle + turn;
-  int rightSpeed = throttle - turn;
+  int throttle = Controller1.Axis3.position(percent);
+  int turn = Controller1.Axis1.position(percent) * 0.5;
 
-  int wt;
-
-  // 2. Apply a 5% deadzone to prevent joystick drift
+  // Deadzone
   if (abs(throttle) < 5)
     throttle = 0;
+
   if (abs(turn) < 5)
     turn = 0;
 
-  // 3. Combine inputs and spin the motors
-  LeftFront.spin(forward, throttle + turn, percent);
-  LeftBack.spin(forward, throttle + turn, percent);
-  RightFront.spin(forward, (throttle - turn), percent);
-  RightBack.spin(forward, (throttle - turn), percent);
+  int leftSpeed = throttle + turn;
+  int rightSpeed = throttle - turn;
 
-  // limit motor speeds to -100 to 100%
-  if (leftSpeed > 100)
-    leftSpeed = 100;
-  if (leftSpeed < -100)
-    leftSpeed = -100;
+  // Clamp actual motor speeds
+  leftSpeed = fmax(-100, fmin(100, leftSpeed));
+  rightSpeed = fmax(-100, fmin(100, rightSpeed));
 
-  if (rightSpeed > 100)
-    rightSpeed = 100;
-  if (rightSpeed < -100)
-    rightSpeed = -100;
+  LeftFront.spin(forward, leftSpeed, percent);
+  LeftBack.spin(forward, leftSpeed, percent);
+  RightFront.spin(forward, rightSpeed, percent);
+  RightBack.spin(forward, rightSpeed, percent);
 }
 
 void driveBrake()
