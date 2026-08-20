@@ -183,6 +183,62 @@ void Display()
   LineNumber = 0;
 }
 
+int autonSelect = 0;
+int autonMax = 5;
+int autonMin = 0;
+
+void selectAuton()
+{
+  bool selectingAuton = true;
+  int x = Brain.Screen.xPosition();
+  int y = Brain.Screen.yPosition();
+
+  if (x >= 20 && x <= 120 && y >= 50 && y <= 150)
+  {
+    autonSelect++;
+    if (autonSelect > autonMax)
+    {
+      autonSelect = autonMin;
+    }
+    Brain.Screen.printAt(1, 20, "AutonSelected = %d", autonSelect);
+  }
+
+  if (x >= 170 && x <= 210 && y >= 50 && y >= 150)
+  {
+    selectingAuton = false;
+    Brain.Screen.printAt(1, 200, "Auton = %d GO", autonSelect);
+  }
+
+  if (!selectingAuton)
+  {
+    Brain.Screen.setFillColor(green);
+    Brain.Screen.drawCircle(300, 75, 25);
+  }
+  else
+  {
+    Brain.Screen.setFillColor(red);
+    Brain.Screen.drawCircle(300, 75, 25);
+  }
+
+  wait(10, msec);
+  Brain.Screen.setFillColor(black);
+}
+
+void drawGUI()
+{
+  Brain.Screen.clearScreen();
+  Brain.Screen.printAt(1, 40, "Select Auton and Press Go");
+  Brain.Screen.printAt(1, 200, "Auton Selected =&d", autonSelect);
+  Brain.Screen.setFillColor(red);
+  Brain.Screen.drawRectangle(20, 50, 100, 100);
+  Brain.Screen.drawCircle(300, 75, 25);
+  Brain.Screen.printAt(25, 75, "Select");
+  Brain.Screen.setFillColor(green);
+  Brain.Screen.drawRectangle(170, 50, 100, 100);
+  Brain.Screen.printAt(175, 75, "Go");
+  Brain.Screen.setFillColor(black);
+}
+
 void inchDrive(double target, int speed)
 {
   // Reset the left and right motor encoders.
@@ -314,6 +370,8 @@ void pre_auton(void)
   RightBack.resetPosition();
 
   Brain.Screen.clearScreen();
+
+  drawGUI();
 }
 
 /*---------------------------------------------------------------------------*/
@@ -328,6 +386,7 @@ void pre_auton(void)
 
 void autonomous(void)
 {
+
   inchDrive(20, 20);
   wait(500, msec);
   inchDrive(-20, 20);
