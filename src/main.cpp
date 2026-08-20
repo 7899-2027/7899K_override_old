@@ -386,10 +386,15 @@ void pre_auton(void)
 
 void autonomous(void)
 {
-
-  inchDrive(20, 20);
-  wait(500, msec);
-  inchDrive(-20, 20);
+  switch (autonSelect)
+  {
+  case 0:
+    // inchdrive test
+    inchDrive(20, 20);
+    wait(500, msec);
+    inchDrive(-20, 20);
+    break;
+  }
 }
 
 /*---------------------------------------------------------------------------*/
