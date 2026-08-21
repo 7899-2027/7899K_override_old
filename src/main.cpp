@@ -24,10 +24,10 @@ inertial Gyro(PORT19);
 
 aivision AISensor(PORT5);
 
-motor LeftFront(PORT20, ratio18_1, true);
-motor LeftBack(PORT10, ratio18_1, true);
-motor RightFront(PORT11, ratio18_1, false);
-motor RightBack(PORT3, ratio18_1, false);
+motor LeftFront(PORT20, ratio6_1, true);
+motor LeftBack(PORT10, ratio6_1, true);
+motor RightFront(PORT11, ratio6_1, false);
+motor RightBack(PORT3, ratio6_1, false);
 
 // FUNCTIONS
 
@@ -240,6 +240,7 @@ void drawGUI()
 }
 
 void inchDrive(double target, int speed)
+
 {
   // Reset the left and right motor encoders.
   LeftFront.setPosition(0, rev);
@@ -247,6 +248,8 @@ void inchDrive(double target, int speed)
 
   // Reset the gyro to 0 degrees.
   Gyro.setRotation(0, degrees);
+
+  timer printTimer;
 
   double distance = 0;
 
@@ -264,6 +267,25 @@ void inchDrive(double target, int speed)
 
     // Average the distance from both sides.
     distance = (fabs(leftDistance) + fabs(rightDistance)) / 2.0;
+
+    if (printTimer.time(msec) >= 100)
+    {
+      Brain.Screen.clearScreen();
+
+      Brain.Screen.printAt(10, 30,
+                           "LF Rev: %.3f",
+                           LeftFront.position(rev));
+
+      Brain.Screen.printAt(10, 60,
+                           "RF Rev: %.3f",
+                           RightFront.position(rev));
+
+      Brain.Screen.printAt(10, 90,
+                           "Distance: %.2f",
+                           distance);
+
+      printTimer.clear();
+    }
 
     // Read the robot's current heading from the gyro.
     double currentHeading = Gyro.rotation(degrees);
@@ -390,10 +412,13 @@ void autonomous(void)
   {
   case 0:
     // inchdrive test
-    inchDrive(20, 20);
-    wait(500, msec);
-    inchDrive(-20, 20);
+    inchDrive(35, 20);
+    driveBrake();
+    wait(1000, msec);
+    inchDrive(-35, 20);
     break;
+
+    Brain.Screen.printAt(10, 30, "LF rev: %.3f", LeftFront.position(rev));
   }
 }
 
