@@ -1,3 +1,4 @@
+
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*    Module:       main.cpp                                                  */
@@ -197,10 +198,26 @@ void Display()
 int autonSelect = 0;
 int autonMax = 5;
 int autonMin = 0;
+bool selectingAuton = true;
+
+void drawGUI()
+{
+  Brain.Screen.clearScreen();
+  Brain.Screen.printAt(1, 40, "Select Auton and Press Go");
+  Brain.Screen.printAt(1, 200, "Auton Selected =&d", autonSelect);
+  Brain.Screen.setFillColor(red);
+  Brain.Screen.drawRectangle(20, 50, 100, 100);
+  Brain.Screen.drawCircle(300, 75, 25);
+  Brain.Screen.printAt(25, 75, "Select");
+  Brain.Screen.setFillColor(green);
+  Brain.Screen.drawRectangle(170, 50, 100, 100);
+  Brain.Screen.printAt(175, 75, "Go");
+  Brain.Screen.setFillColor(black);
+}
 
 void selectAuton()
 {
-  bool selectingAuton = true;
+
   int x = Brain.Screen.xPosition();
   int y = Brain.Screen.yPosition();
 
@@ -214,7 +231,8 @@ void selectAuton()
     Brain.Screen.printAt(1, 20, "AutonSelected = %d", autonSelect);
   }
 
-  if (x >= 170 && x <= 210 && y >= 50 && y >= 150)
+  if (x >= 170 && x <= 270 && y >= 50 && y <= 150)
+
   {
     selectingAuton = false;
     Brain.Screen.printAt(1, 200, "Auton = %d GO", autonSelect);
@@ -232,21 +250,6 @@ void selectAuton()
   }
 
   wait(10, msec);
-  Brain.Screen.setFillColor(black);
-}
-
-void drawGUI()
-{
-  Brain.Screen.clearScreen();
-  Brain.Screen.printAt(1, 40, "Select Auton and Press Go");
-  Brain.Screen.printAt(1, 200, "Auton Selected =&d", autonSelect);
-  Brain.Screen.setFillColor(red);
-  Brain.Screen.drawRectangle(20, 50, 100, 100);
-  Brain.Screen.drawCircle(300, 75, 25);
-  Brain.Screen.printAt(25, 75, "Select");
-  Brain.Screen.setFillColor(green);
-  Brain.Screen.drawRectangle(170, 50, 100, 100);
-  Brain.Screen.printAt(175, 75, "Go");
   Brain.Screen.setFillColor(black);
 }
 
@@ -405,6 +408,7 @@ void pre_auton(void)
   Brain.Screen.clearScreen();
 
   drawGUI();
+  Brain.Screen.pressed(selectAuton);
 }
 
 /*---------------------------------------------------------------------------*/
