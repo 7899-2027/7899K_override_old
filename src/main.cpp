@@ -373,6 +373,24 @@ void inchDrive(double target, int speed)
   driveBrake();
 }
 
+void gyroTurn(float target)
+{
+  float heading = 0.0;
+  float accuracy = 2.0;
+  float error = target - heading;
+  float kp = 5.0;
+  float speed = kp * error;
+  Gyro.setRotation(0.0, degrees);
+  while (fabs(error) >= accuracy)
+  {
+    speed = kp * error;
+    tankDrive(speed, -speed, 10);
+    heading = Gyro.rotation();
+    error = target - heading;
+  }
+  tankDrive(0, 0, 0);
+}
+
 /*---------------------------------------------------------------------------*/
 /*                          Pre-Autonomous Functions                         */
 /*                                                                           */
@@ -429,8 +447,12 @@ void autonomous(void)
     // inchdrive test
     inchDrive(35, 20);
     driveBrake();
+    gyroTurn(90);
+    wait(2000, msec);
+    gyroTurn(-90);
     wait(1000, msec);
     inchDrive(-35, 20);
+
     break;
 
     Brain.Screen.printAt(10, 30, "LF rev: %.3f", LeftFront.position(rev));
