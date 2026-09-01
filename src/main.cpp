@@ -30,6 +30,8 @@ motor LeftBack(PORT10, ratio6_1, true);
 motor RightFront(PORT11, ratio6_1, false);
 motor RightBack(PORT3, ratio6_1, false);
 
+motor claw(PORT5, ratio18_1, false);
+
 // FUNCTIONS
 
 double pi = M_PI;
@@ -85,6 +87,29 @@ void arcadeDrive()
   LeftBack.spin(forward, leftSpeed, percent);
   RightFront.spin(forward, rightSpeed, percent);
   RightBack.spin(forward, rightSpeed, percent);
+}
+
+double clawCurrentLimit = 0.6;
+bool currentMax = false;
+
+int clawIntake()
+{
+  while (true)
+  {
+    // 1. If the motor spikes past the limit, trip the latch permanently
+    if (!currentMax && claw.current(amp) > clawCurrentLimit)
+    {
+      currentMax = true;
+    }
+    // 2. Override the motor if tripped
+    if (currentMax)
+    {
+      claw.stop(brakeType::coast);
+    }
+    // Check every 20 milliseconds
+    wait(20, msec);
+  }
+  return 0;
 }
 
 void driveBrake()
@@ -374,6 +399,7 @@ void inchDrive(double target, int speed)
 }
 
 void gyroTurn(float target)
+
 {
   float heading = 0.0;
   float accuracy = 2.0;
@@ -445,13 +471,13 @@ void autonomous(void)
   {
   case 0:
     // inchdrive test
-    inchDrive(35, 20);
+    inchDrive(28, 20);
     driveBrake();
     gyroTurn(90);
     wait(2000, msec);
     gyroTurn(-90);
     wait(1000, msec);
-    inchDrive(-35, 20);
+    inchDrive(-28, 20);
 
     break;
 
@@ -501,6 +527,22 @@ void usercontrol(void)
     {
       Display();
       count = 0;
+    }
+
+    if (!currentMax)
+    {
+      if (Controller1.ButtonUp.pressing())
+      {
+        claw.spin(forward, 75, percent);
+      }
+      else if (Controller1.ButtonDown.pressing())
+      {
+        claw.spin(forward, -75, percent);
+      }
+      else
+      {
+        claw.stop(brakeType::coast);
+      }
     }
 
     // This is the main execution loop for the user control program.
