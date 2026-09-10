@@ -56,7 +56,7 @@ void tankDrive(double lspeed, double rspeed, int wt)
 void arcadeDrive()
 {
   int throttle = Controller1.Axis3.position(percent);
-  int turn = Controller1.Axis1.position(percent) * 0.85;
+  int turn = Controller1.Axis1.position(percent) * 0.9;
 
   // Deadzone
   if (abs(throttle) < 5)
@@ -70,13 +70,13 @@ void arcadeDrive()
 
   if (throttle != 0)
   {
-    turn = Controller1.Axis1.position(percent) * 0.9;
+    turn = Controller1.Axis1.position(percent) * 0.9; // turn whole driving
     int correction = 1;
     leftSpeed += correction;
   }
   else if (throttle == 0)
   {
-    turn = Controller1.Axis1.position(percent) * 0.5;
+    turn = Controller1.Axis1.position(percent) * 0.47; // turn when there's no driving
   }
 
   // Clamp actual motor speeds
