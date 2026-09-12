@@ -2,8 +2,8 @@
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*    Module:       main.cpp                                                  */
-/*    Author:       mlgodoy                                                   */
-/*    Created:      6/25/2026, 5:14:40 PM                                     */
+/*    Author:       xxxx                                                  */
+/*    Created:      xxxx                                 */
 /*    Description:  V5 project                                                */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
@@ -55,8 +55,8 @@ void tankDrive(double lspeed, double rspeed, int wt)
 
 void arcadeDrive()
 {
-  int throttle = Controller1.Axis3.position(percent);
-  int turn = Controller1.Axis1.position(percent) * 0.9;
+  double throttle = Controller1.Axis3.position(percent);
+  double turn = Controller1.Axis1.position(percent) * 0.9;
 
   // Deadzone
   if (abs(throttle) < 5)
@@ -70,13 +70,13 @@ void arcadeDrive()
 
   if (throttle != 0)
   {
-    turn = Controller1.Axis1.position(percent) * 0.9; // turn whole driving
+    turn = Controller1.Axis1.position(percent) * 0.93; // turn whole driving
     int correction = 1;
     leftSpeed += correction;
   }
   else if (throttle == 0)
   {
-    turn = Controller1.Axis1.position(percent) * 0.47; // turn when there's no driving
+    turn = Controller1.Axis1.position(percent) * 0.46; // turn when there's no driving
   }
 
   // Clamp actual motor speeds
@@ -398,23 +398,67 @@ void inchDrive(double target, int speed)
   driveBrake();
 }
 
-void gyroTurn(float target)
-
+void gyroTurn(double target)
 {
-  float heading = 0.0;
-  float accuracy = 2.0;
-  float error = target - heading;
-  float kp = 5.0;
-  float speed = kp * error;
-  Gyro.setRotation(0.0, degrees);
-  while (fabs(error) >= accuracy)
+  // Compensation for drivetrain overshoot
+  if (target > 0)
+    target -= 5;
+  else
+    target += 5;
+
+  Gyro.setRotation(0, degrees);
+
+  double accuracy = 1.0;
+
+  double maxSpeed = 35;
+  double minSpeed = 8;
+
+  double kpFar = 0.7;
+  double kpNear = 1.2;
+
+  double error = target;
+
+  while (fabs(error) > accuracy)
   {
-    speed = kp * error;
-    tankDrive(speed, -speed, 10);
-    heading = Gyro.rotation();
+    double heading = Gyro.rotation(degrees);
     error = target - heading;
+
+    double speed;
+
+    if (fabs(error) < 25)
+      speed = error * kpNear;
+    else
+      speed = error * kpFar;
+
+    if (speed > maxSpeed)
+      speed = maxSpeed;
+
+    if (speed < -maxSpeed)
+      speed = -maxSpeed;
+
+    if (fabs(speed) < minSpeed)
+    {
+      if (speed > 0)
+        speed = minSpeed;
+      else
+        speed = -minSpeed;
+    }
+
+    LeftFront.spin(forward, speed, pct);
+    LeftBack.spin(forward, speed, pct);
+
+    RightFront.spin(forward, -speed, pct);
+    RightBack.spin(forward, -speed, pct);
+
+    wait(10, msec);
   }
-  tankDrive(0, 0, 0);
+
+  LeftFront.stop(brake);
+  LeftBack.stop(brake);
+  RightFront.stop(brake);
+  RightBack.stop(brake);
+
+  wait(100, msec);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -471,13 +515,26 @@ void autonomous(void)
   {
   case 0:
     // inchdrive test
-    inchDrive(28, 20);
+    inchDrive(28, 50);
     driveBrake();
     gyroTurn(90);
     wait(2000, msec);
     gyroTurn(-90);
     wait(1000, msec);
-    inchDrive(-28, 20);
+    inchDrive(-28, 50);
+
+    break;
+
+  case 1:
+    inchDrive(40, 50);
+    driveBrake();
+    gyroTurn(-45);
+    wait(1000, msec);
+    inchDrive(25, 50);
+    driveBrake();
+    gyroTurn(-45);
+    wait(1000, msec);
+    inchDrive(40, 50);
 
     break;
 
