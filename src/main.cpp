@@ -2,8 +2,8 @@
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*    Module:       main.cpp                                                  */
-/*    Author:       xxxx                                                  */
-/*    Created:      xxxx                                 */
+/*    Author:       xxxx                                                     */
+/*    Created:      xxxx                                                     */
 /*    Description:  V5 project                                                */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
@@ -23,7 +23,7 @@ brain Brain;
 
 inertial Gyro(PORT19);
 
-aivision AISensor(PORT5);
+aivision AISensor(PORT6);
 
 motor LeftFront(PORT20, ratio6_1, true);
 motor LeftBack(PORT10, ratio6_1, true);
@@ -50,7 +50,7 @@ void tankDrive(double lspeed, double rspeed, int wt)
   LeftBack.spin(forward, lspeed, pct);
   RightFront.spin(forward, rspeed, pct);
   RightBack.spin(forward, rspeed, pct);
-  task::sleep(wt);
+  wait(10, msec);
 }
 
 void arcadeDrive()
@@ -70,13 +70,13 @@ void arcadeDrive()
 
   if (throttle != 0)
   {
-    turn = Controller1.Axis1.position(percent) * 0.93; // turn whole driving
+    turn = Controller1.Axis1.position(percent) * 0.93; // turn while driving
     int correction = 1;
     leftSpeed += correction;
   }
   else if (throttle == 0)
   {
-    turn = Controller1.Axis1.position(percent) * 0.46; // turn when there's no driving
+    turn = Controller1.Axis1.position(percent) * 0.33; // turn when there's no driving
   }
 
   // Clamp actual motor speeds
@@ -220,7 +220,7 @@ void Display()
   LineNumber = 0;
 }
 
-int autonSelect = 0;
+int autonSelect = 2;
 int autonMax = 5;
 int autonMin = 0;
 bool selectingAuton = true;
@@ -399,6 +399,7 @@ void inchDrive(double target, int speed)
 }
 
 void gyroTurn(double target)
+
 {
   // Compensation for drivetrain overshoot
   if (target > 0)
@@ -461,6 +462,55 @@ void gyroTurn(double target)
   wait(100, msec);
 }
 
+void testAprilTags()
+{
+  while (true)
+  {
+    AISensor.takeSnapshot(aivision::ALL_TAGS);
+
+    Brain.Screen.clearScreen();
+
+    if (AISensor.objectCount > 0)
+    {
+      Brain.Screen.printAt(10, 30, "Tags: %d", AISensor.objectCount);
+
+      Brain.Screen.printAt(10, 60,
+                           "ID: %d",
+                           AISensor.objects[0].id);
+
+      Brain.Screen.printAt(10, 90,
+                           "X: %.0f",
+                           AISensor.objects[0].centerX);
+
+      Brain.Screen.printAt(10, 120,
+                           "Y: %.0f",
+                           AISensor.objects[0].centerY);
+
+      Brain.Screen.printAt(10, 150,
+                           "Width: %.0f",
+                           AISensor.objects[0].width);
+
+      Brain.Screen.printAt(10, 180,
+                           "Height: %.0f",
+                           AISensor.objects[0].height);
+    }
+    else
+    {
+      Brain.Screen.printAt(10, 30, "NO TAG");
+    }
+
+    wait(50, msec);
+  }
+}
+
+void doubleTurn()
+{
+  inchDrive(5, 80);
+  wait(150, msec);
+  inchDrive(-7, 100);
+  inchDrive(8, 100);
+  wait(1000, msec);
+}
 /*---------------------------------------------------------------------------*/
 /*                          Pre-Autonomous Functions                         */
 /*                                                                           */
@@ -539,6 +589,9 @@ void autonomous(void)
     break;
 
     Brain.Screen.printAt(10, 30, "LF rev: %.3f", LeftFront.position(rev));
+  case 2:
+    testAprilTags();
+    break;
   }
 }
 
