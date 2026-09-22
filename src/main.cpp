@@ -23,7 +23,7 @@ brain Brain;
 
 inertial Gyro(PORT19);
 
-aivision AISensor(PORT6);
+aivision AISensor(PORT6, aivision::ALL_TAGS);
 
 motor LeftFront(PORT20, ratio6_1, true);
 motor LeftBack(PORT10, ratio6_1, true);
@@ -466,40 +466,55 @@ void testAprilTags()
 {
   while (true)
   {
-    AISensor.takeSnapshot(aivision::ALL_TAGS);
-
     Brain.Screen.clearScreen();
 
-    if (AISensor.objectCount > 0)
+    // Check whether the AI Vision Sensor is connected
+    if (!AISensor.installed())
     {
-      Brain.Screen.printAt(10, 30, "Tags: %d", AISensor.objectCount);
+      Brain.Screen.setPenColor(red);
+      Brain.Screen.printAt(10, 40, "AI VISION NOT CONNECTED");
+      Brain.Screen.printAt(10, 70, "Check Smart Port 6");
+      wait(500, msec);
+      continue;
+    }
 
-      Brain.Screen.printAt(10, 60,
-                           "ID: %d",
+    Brain.Screen.setPenColor(green);
+    Brain.Screen.printAt(10, 40, "AI VISION CONNECTED");
+
+    // Take an AprilTag snapshot
+    int count = AISensor.takeSnapshot(aivision::ALL_TAGS);
+
+    Brain.Screen.setPenColor(white);
+
+    Brain.Screen.printAt(10, 80, "Return: %d", count);
+    Brain.Screen.printAt(10, 110, "Count: %d", AISensor.objectCount);
+
+    if (AISensor.objectCount > 0 &&
+        AISensor.objects[0].exists)
+    {
+      Brain.Screen.printAt(10, 140,
+                           "TAG ID: %d",
                            AISensor.objects[0].id);
 
-      Brain.Screen.printAt(10, 90,
+      Brain.Screen.printAt(10, 170,
                            "X: %.0f",
                            AISensor.objects[0].centerX);
 
-      Brain.Screen.printAt(10, 120,
+      Brain.Screen.printAt(10, 200,
                            "Y: %.0f",
                            AISensor.objects[0].centerY);
 
-      Brain.Screen.printAt(10, 150,
-                           "Width: %.0f",
-                           AISensor.objects[0].width);
-
-      Brain.Screen.printAt(10, 180,
-                           "Height: %.0f",
+      Brain.Screen.printAt(10, 230,
+                           "W: %.0f H: %.0f",
+                           AISensor.objects[0].width,
                            AISensor.objects[0].height);
     }
     else
     {
-      Brain.Screen.printAt(10, 30, "NO TAG");
+      Brain.Screen.printAt(10, 140, "NO TAG");
     }
 
-    wait(50, msec);
+    wait(100, msec);
   }
 }
 
