@@ -463,6 +463,7 @@ void gyroTurn(double target)
 }
 
 void testAprilTags()
+
 {
   while (true)
   {
@@ -515,6 +516,83 @@ void testAprilTags()
     }
 
     wait(100, msec);
+  }
+}
+
+void driveToAprilTag(int targetWidth = 120)
+{
+  while (true)
+  {
+    int count = AISensor.takeSnapshot(aivision::ALL_TAGS);
+
+    if (count > 0 && AISensor.objects[0].exists)
+    {
+      // Use the AprilTag position as the steering input.
+      double turn =
+          (AISensor.objects[0].centerX - 158) * 0.35;
+
+      // Drive forward toward the tag.
+      double throttle = 40;
+
+      // Stop when the tag is close enough.
+      if (AISensor.objects[0].width >= targetWidth)
+      {
+        driveBrake();
+        break;
+      }
+
+      // Same basic math as arcadeDrive()
+      int leftSpeed = throttle + turn;
+      int rightSpeed = throttle - turn;
+
+      // Clamp motor speeds
+      leftSpeed = fmax(-100, fmin(100, leftSpeed));
+      rightSpeed = fmax(-100, fmin(100, rightSpeed));
+
+      LeftFront.spin(forward, leftSpeed, percent);
+      LeftBack.spin(forward, leftSpeed, percent);
+      RightFront.spin(forward, rightSpeed, percent);
+      RightBack.spin(forward, rightSpeed, percent);
+
+      // Display useful information
+      Brain.Screen.clearScreen();
+
+      Brain.Screen.printAt(
+          10, 30,
+          "Tag ID: %d",
+          AISensor.objects[0].id);
+
+      Brain.Screen.printAt(
+          10, 60,
+          "X: %.0f",
+          AISensor.objects[0].centerX);
+
+      Brain.Screen.printAt(
+          10, 90,
+          "Width: %.0f",
+          AISensor.objects[0].width);
+
+      Brain.Screen.printAt(
+          10, 120,
+          "Turn: %.1f",
+          turn);
+
+      Brain.Screen.printAt(
+          10, 150,
+          "L: %d R: %d",
+          leftSpeed,
+          rightSpeed);
+    }
+    else
+    {
+      // No tag — stop instead of driving blindly.
+      driveBrake();
+
+      Brain.Screen.clearScreen();
+      Brain.Screen.printAt(10, 30, "NO APRILTAG");
+    }
+
+    wait(50, msec);
   }
 }
 
@@ -605,7 +683,7 @@ void autonomous(void)
 
     Brain.Screen.printAt(10, 30, "LF rev: %.3f", LeftFront.position(rev));
   case 2:
-    testAprilTags();
+    driveToAprilTag();
     break;
   }
 }
