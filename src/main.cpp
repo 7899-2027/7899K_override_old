@@ -106,6 +106,10 @@ int clawIntake()
     {
       claw.stop(brakeType::coast);
     }
+    else
+    {
+      currentMax = false;
+    }
     // Check every 20 milliseconds
     wait(20, msec);
   }
@@ -220,7 +224,7 @@ void Display()
   LineNumber = 0;
 }
 
-int autonSelect = 2;
+int autonSelect = 3;
 int autonMax = 5;
 int autonMin = 0;
 bool selectingAuton = true;
@@ -519,78 +523,180 @@ void testAprilTags()
   }
 }
 
-void driveToAprilTag(int targetWidth = 120)
+void driveToAprilTag(int targetID, int targetWidth = 120)
 {
+  // AI Vision camera center
+  const double cameraCenterX = 158.0;
+
+  // How aggressively the robot turns toward the tag
+  const double turnKp = 0.35;
+
+  // Maximum forward speed
+  const double maxSpeed = 40;
+
   while (true)
   {
+    // Look for all AprilTags
     int count = AISensor.takeSnapshot(aivision::ALL_TAGS);
 
-    if (count > 0 && AISensor.objects[0].exists)
+    int targetIndex = -1;
+
+    // ---------------------------------------------------------
+    // Find the specific AprilTag we want
+    // ---------------------------------------------------------
+
+    for (int i = 0; i < count; i++)
     {
-      // Use the AprilTag position as the steering input.
-      double turn =
-          (AISensor.objects[0].centerX - 158) * 0.35;
-
-      // Drive forward toward the tag.
-      double throttle = 40;
-
-      // Stop when the tag is close enough.
-      if (AISensor.objects[0].width >= targetWidth)
+      if (AISensor.objects[i].exists &&
+          AISensor.objects[i].id == targetID)
       {
-        driveBrake();
+        targetIndex = i;
         break;
       }
-
-      // Same basic math as arcadeDrive()
-      int leftSpeed = throttle + turn;
-      int rightSpeed = throttle - turn;
-
-      // Clamp motor speeds
-      leftSpeed = fmax(-100, fmin(100, leftSpeed));
-      rightSpeed = fmax(-100, fmin(100, rightSpeed));
-
-      LeftFront.spin(forward, leftSpeed, percent);
-      LeftBack.spin(forward, leftSpeed, percent);
-      RightFront.spin(forward, rightSpeed, percent);
-      RightBack.spin(forward, rightSpeed, percent);
-
-      // Display useful information
-      Brain.Screen.clearScreen();
-
-      Brain.Screen.printAt(
-          10, 30,
-          "Tag ID: %d",
-          AISensor.objects[0].id);
-
-      Brain.Screen.printAt(
-          10, 60,
-          "X: %.0f",
-          AISensor.objects[0].centerX);
-
-      Brain.Screen.printAt(
-          10, 90,
-          "Width: %.0f",
-          AISensor.objects[0].width);
-
-      Brain.Screen.printAt(
-          10, 120,
-          "Turn: %.1f",
-          turn);
-
-      Brain.Screen.printAt(
-          10, 150,
-          "L: %d R: %d",
-          leftSpeed,
-          rightSpeed);
     }
-    else
+
+    // ---------------------------------------------------------
+    // Target tag not found
+    // ---------------------------------------------------------
+
+    if (targetIndex == -1)
     {
-      // No tag — stop instead of driving blindly.
-      driveBrake();
+      LeftFront.stop(brake);
+      LeftBack.stop(brake);
+      RightFront.stop(brake);
+      RightBack.stop(brake);
 
       Brain.Screen.clearScreen();
-      Brain.Screen.printAt(10, 30, "NO APRILTAG");
+
+      Brain.Screen.printAt(10, 30,
+                           "LOOKING FOR TAG %d",
+                           targetID);
+
+      Brain.Screen.printAt(10, 60,
+                           "Detected tags: %d",
+                           count);
+
+      wait(50, msec);
+      continue;
     }
+
+    // ---------------------------------------------------------
+    // Get information about our target tag
+    // ---------------------------------------------------------
+
+    double tagX = AISensor.objects[targetIndex].centerX;
+    double tagWidth = AISensor.objects[targetIndex].width;
+
+    // Distance from center of camera
+    double error = tagX - cameraCenterX;
+
+    // ---------------------------------------------------------
+    // Stop when close enough
+    // ---------------------------------------------------------
+
+    if (tagWidth >= targetWidth)
+    {
+      LeftFront.stop(brake);
+      LeftBack.stop(brake);
+      RightFront.stop(brake);
+      RightBack.stop(brake);
+
+      Brain.Screen.clearScreen();
+
+      Brain.Screen.printAt(10, 30,
+                           "TAG %d REACHED",
+                           targetID);
+
+      Brain.Screen.printAt(10, 60,
+                           "Width: %.0f",
+                           tagWidth);
+
+      break;
+    }
+
+    // ---------------------------------------------------------
+    // Calculate steering correction
+    // ---------------------------------------------------------
+
+    double correction = error * turnKp;
+
+    // Limit correction
+    if (correction > 30)
+      correction = 30;
+
+    if (correction < -30)
+      correction = -30;
+
+    // ---------------------------------------------------------
+    // Slow down as we approach the tag
+    // ---------------------------------------------------------
+
+    double speed = maxSpeed;
+
+    if (tagWidth > targetWidth * 0.70)
+      speed = 20;
+    else if (tagWidth > targetWidth * 0.50)
+      speed = 30;
+
+    // ---------------------------------------------------------
+    // Calculate motor speeds
+    // ---------------------------------------------------------
+
+    double leftSpeed = speed + correction;
+    double rightSpeed = speed - correction;
+
+    // Clamp speeds
+    if (leftSpeed > 100)
+      leftSpeed = 100;
+
+    if (leftSpeed < -100)
+      leftSpeed = -100;
+
+    if (rightSpeed > 100)
+      rightSpeed = 100;
+
+    if (rightSpeed < -100)
+      rightSpeed = -100;
+
+    // ---------------------------------------------------------
+    // Drive
+    // ---------------------------------------------------------
+
+    LeftFront.spin(forward, leftSpeed, pct);
+    LeftBack.spin(forward, leftSpeed, pct);
+
+    RightFront.spin(forward, rightSpeed, pct);
+    RightBack.spin(forward, rightSpeed, pct);
+
+    // ---------------------------------------------------------
+    // Debug information
+    // ---------------------------------------------------------
+
+    Brain.Screen.clearScreen();
+
+    Brain.Screen.printAt(10, 30,
+                         "TARGET ID: %d",
+                         targetID);
+
+    Brain.Screen.printAt(10, 60,
+                         "TAG X: %.0f",
+                         tagX);
+
+    Brain.Screen.printAt(10, 90,
+                         "TAG WIDTH: %.0f",
+                         tagWidth);
+
+    Brain.Screen.printAt(10, 120,
+                         "ERROR: %.0f",
+                         error);
+
+    Brain.Screen.printAt(10, 150,
+                         "LEFT: %.1f",
+                         leftSpeed);
+
+    Brain.Screen.printAt(10, 180,
+                         "RIGHT: %.1f",
+                         rightSpeed);
 
     wait(50, msec);
   }
@@ -598,11 +704,19 @@ void driveToAprilTag(int targetWidth = 120)
 
 void doubleTurn()
 {
-  inchDrive(5, 80);
+  inchDrive(5, 20);
   wait(150, msec);
-  inchDrive(-7, 100);
-  inchDrive(8, 100);
+  inchDrive(-3, 100);
+  driveBrake();
+  wait(100, msec);
+  inchDrive(8, 20);
   wait(1000, msec);
+}
+
+void brakeNwait(int waitTime)
+{
+  driveBrake();
+  wait(waitTime, msec);
 }
 /*---------------------------------------------------------------------------*/
 /*                          Pre-Autonomous Functions                         */
@@ -669,6 +783,7 @@ void autonomous(void)
     break;
 
   case 1:
+    // jayden test
     inchDrive(40, 50);
     driveBrake();
     gyroTurn(-45);
@@ -683,7 +798,25 @@ void autonomous(void)
 
     Brain.Screen.printAt(10, 30, "LF rev: %.3f", LeftFront.position(rev));
   case 2:
-    driveToAprilTag();
+    // april tag
+    driveToAprilTag(4);
+    break;
+  case 3:
+    // first auton using 1st full asian strat
+    doubleTurn();
+    inchDrive(-14, 50);
+    brakeNwait(500);
+    gyroTurn(-91);
+    brakeNwait(500);
+    inchDrive(-15, 40);
+    brakeNwait(500);
+    inchDrive(9, 40);
+    brakeNwait(500);
+    gyroTurn(-35);
+    inchDrive(-18, 40);
+    brakeNwait(500);
+    gyroTurn(-55);
+    inchDrive(-4, 40);
     break;
   }
 }
