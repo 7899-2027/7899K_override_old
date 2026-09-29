@@ -525,26 +525,20 @@ void testAprilTags()
 
 void driveToAprilTag(int targetID, int targetWidth = 120)
 {
-  // AI Vision camera center
   const double cameraCenterX = 158.0;
 
-  // How aggressively the robot turns toward the tag
   const double turnKp = 0.35;
 
-  // Maximum forward speed
   const double maxSpeed = 40;
 
   while (true)
   {
-    // Look for all AprilTags
+    // Take a snapshot
     int count = AISensor.takeSnapshot(aivision::ALL_TAGS);
 
     int targetIndex = -1;
 
-    // ---------------------------------------------------------
-    // Find the specific AprilTag we want
-    // ---------------------------------------------------------
-
+    // Find our target tag
     for (int i = 0; i < count; i++)
     {
       if (AISensor.objects[i].exists &&
@@ -556,15 +550,12 @@ void driveToAprilTag(int targetID, int targetWidth = 120)
     }
 
     // ---------------------------------------------------------
-    // Target tag not found
+    // TAG NOT FOUND
     // ---------------------------------------------------------
 
     if (targetIndex == -1)
     {
-      LeftFront.stop(brake);
-      LeftBack.stop(brake);
-      RightFront.stop(brake);
-      RightBack.stop(brake);
+      driveBrake();
 
       Brain.Screen.clearScreen();
 
@@ -573,7 +564,7 @@ void driveToAprilTag(int targetID, int targetWidth = 120)
                            targetID);
 
       Brain.Screen.printAt(10, 60,
-                           "Detected tags: %d",
+                           "TAGS: %d",
                            count);
 
       wait(50, msec);
@@ -581,25 +572,24 @@ void driveToAprilTag(int targetID, int targetWidth = 120)
     }
 
     // ---------------------------------------------------------
-    // Get information about our target tag
+    // GET TAG DATA
     // ---------------------------------------------------------
 
-    double tagX = AISensor.objects[targetIndex].centerX;
-    double tagWidth = AISensor.objects[targetIndex].width;
+    double tagX =
+        AISensor.objects[targetIndex].centerX;
 
-    // Distance from center of camera
+    double tagWidth =
+        AISensor.objects[targetIndex].width;
+
     double error = tagX - cameraCenterX;
 
     // ---------------------------------------------------------
-    // Stop when close enough
+    // CLOSE ENOUGH
     // ---------------------------------------------------------
 
     if (tagWidth >= targetWidth)
     {
-      LeftFront.stop(brake);
-      LeftBack.stop(brake);
-      RightFront.stop(brake);
-      RightBack.stop(brake);
+      driveBrake();
 
       Brain.Screen.clearScreen();
 
@@ -608,19 +598,19 @@ void driveToAprilTag(int targetID, int targetWidth = 120)
                            targetID);
 
       Brain.Screen.printAt(10, 60,
-                           "Width: %.0f",
+                           "WIDTH: %.0f",
                            tagWidth);
 
       break;
     }
 
     // ---------------------------------------------------------
-    // Calculate steering correction
+    // STEERING
     // ---------------------------------------------------------
 
     double correction = error * turnKp;
 
-    // Limit correction
+    // Limit steering correction
     if (correction > 30)
       correction = 30;
 
@@ -628,24 +618,33 @@ void driveToAprilTag(int targetID, int targetWidth = 120)
       correction = -30;
 
     // ---------------------------------------------------------
-    // Slow down as we approach the tag
+    // SPEED
     // ---------------------------------------------------------
 
     double speed = maxSpeed;
 
     if (tagWidth > targetWidth * 0.70)
+    {
       speed = 20;
+    }
     else if (tagWidth > targetWidth * 0.50)
+    {
       speed = 30;
+    }
 
     // ---------------------------------------------------------
-    // Calculate motor speeds
+    // BACKWARD DRIVE
+    //
+    // Negative speed = reverse because of your drivetrain setup.
     // ---------------------------------------------------------
 
-    double leftSpeed = speed + correction;
-    double rightSpeed = speed - correction;
+    double leftSpeed =
+        -speed + correction;
 
-    // Clamp speeds
+    double rightSpeed =
+        -speed - correction;
+
+    // Clamp
     if (leftSpeed > 100)
       leftSpeed = 100;
 
@@ -659,7 +658,7 @@ void driveToAprilTag(int targetID, int targetWidth = 120)
       rightSpeed = -100;
 
     // ---------------------------------------------------------
-    // Drive
+    // DRIVE BACKWARD
     // ---------------------------------------------------------
 
     LeftFront.spin(forward, leftSpeed, pct);
@@ -669,32 +668,35 @@ void driveToAprilTag(int targetID, int targetWidth = 120)
     RightBack.spin(forward, rightSpeed, pct);
 
     // ---------------------------------------------------------
-    // Debug information
+    // DEBUG
     // ---------------------------------------------------------
 
     Brain.Screen.clearScreen();
 
     Brain.Screen.printAt(10, 30,
-                         "TARGET ID: %d",
+                         "APRILTAG: %d",
                          targetID);
 
     Brain.Screen.printAt(10, 60,
+                         "REVERSE");
+
+    Brain.Screen.printAt(10, 90,
                          "TAG X: %.0f",
                          tagX);
 
-    Brain.Screen.printAt(10, 90,
-                         "TAG WIDTH: %.0f",
+    Brain.Screen.printAt(10, 120,
+                         "WIDTH: %.0f",
                          tagWidth);
 
-    Brain.Screen.printAt(10, 120,
+    Brain.Screen.printAt(10, 150,
                          "ERROR: %.0f",
                          error);
 
-    Brain.Screen.printAt(10, 150,
+    Brain.Screen.printAt(10, 180,
                          "LEFT: %.1f",
                          leftSpeed);
 
-    Brain.Screen.printAt(10, 180,
+    Brain.Screen.printAt(10, 210,
                          "RIGHT: %.1f",
                          rightSpeed);
 
@@ -799,7 +801,7 @@ void autonomous(void)
     Brain.Screen.printAt(10, 30, "LF rev: %.3f", LeftFront.position(rev));
   case 2:
     // april tag
-    driveToAprilTag(4);
+    driveToAprilTag(0);
     break;
   case 3:
     // first auton using 1st full asian strat
@@ -808,15 +810,17 @@ void autonomous(void)
     brakeNwait(500);
     gyroTurn(-91);
     brakeNwait(500);
-    inchDrive(-15, 40);
+    inchDrive(-13, 40);
+    driveToAprilTag(3, 80);
     brakeNwait(500);
-    inchDrive(9, 40);
+    inchDrive(16, 40);
     brakeNwait(500);
-    gyroTurn(-35);
-    inchDrive(-18, 40);
+    gyroTurn(-23);
+    inchDrive(-24, 40);
     brakeNwait(500);
-    gyroTurn(-55);
+    gyroTurn(-40);
     inchDrive(-4, 40);
+    inchDrive(10, 30);
     break;
   }
 }
