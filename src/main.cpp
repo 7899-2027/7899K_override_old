@@ -523,22 +523,47 @@ void testAprilTags()
   }
 }
 
-void driveToAprilTag(int targetID, int targetWidth = 120)
+void alignToAprilTag(int targetID, int targetWidth = 80)
 {
+  // ---------------------------------------------------------
+  // SETTINGS
+  // ---------------------------------------------------------
+
   const double cameraCenterX = 158.0;
 
-  const double turnKp = 0.35;
+  // Normal driving
+  const double driveSpeed = 35;
 
-  const double maxSpeed = 40;
+  // Rotation speeds
+  const double turnKp = 0.45;
+  const double maxTurnSpeed = 30;
+  const double minTurnSpeed = 6;
+
+  // How accurately the tag must be centered.
+  const double finalTolerance = 3.0;
+
+  // Number of consecutive readings that must be good.
+  const int requiredStableFrames = 10;
+
+  // Once the tag reaches this width, enter final alignment.
+  const double finalAlignmentWidth = targetWidth * 0.75;
+
+  int lostFrames = 0;
+  int stableFrames = 0;
+
+  bool finalAlignment = false;
 
   while (true)
   {
-    // Take a snapshot
+    // ---------------------------------------------------------
+    // TAKE VISION SNAPSHOT
+    // ---------------------------------------------------------
+
     int count = AISensor.takeSnapshot(aivision::ALL_TAGS);
 
     int targetIndex = -1;
 
-    // Find our target tag
+    // Find requested AprilTag
     for (int i = 0; i < count; i++)
     {
       if (AISensor.objects[i].exists &&
@@ -550,29 +575,48 @@ void driveToAprilTag(int targetID, int targetWidth = 120)
     }
 
     // ---------------------------------------------------------
-    // TAG NOT FOUND
+    // TAG LOST
     // ---------------------------------------------------------
 
     if (targetIndex == -1)
     {
+      lostFrames++;
+
       driveBrake();
+
+      stableFrames = 0;
 
       Brain.Screen.clearScreen();
 
       Brain.Screen.printAt(10, 30,
-                           "LOOKING FOR TAG %d",
+                           "TAG %d LOST",
                            targetID);
 
       Brain.Screen.printAt(10, 60,
-                           "TAGS: %d",
-                           count);
+                           "Lost Frames: %d",
+                           lostFrames);
+
+      if (lostFrames >= 10)
+      {
+        Brain.Screen.printAt(10, 100,
+                             "ALIGNMENT FAILED");
+
+        driveBrake();
+
+        wait(300, msec);
+
+        return;
+      }
 
       wait(50, msec);
+
       continue;
     }
 
+    lostFrames = 0;
+
     // ---------------------------------------------------------
-    // GET TAG DATA
+    // READ TAG
     // ---------------------------------------------------------
 
     double tagX =
@@ -581,61 +625,178 @@ void driveToAprilTag(int targetID, int targetWidth = 120)
     double tagWidth =
         AISensor.objects[targetIndex].width;
 
-    double error = tagX - cameraCenterX;
+    double error =
+        tagX - cameraCenterX;
 
     // ---------------------------------------------------------
-    // CLOSE ENOUGH
+    // ENTER FINAL ALIGNMENT
     // ---------------------------------------------------------
 
-    if (tagWidth >= targetWidth)
+    if (tagWidth >= finalAlignmentWidth)
     {
+      finalAlignment = true;
+    }
+
+    // =========================================================
+    // FINAL ALIGNMENT MODE
+    // =========================================================
+
+    if (finalAlignment)
+    {
+      // We are close enough.
+      // Stop driving forward/backward.
       driveBrake();
+
+      // -------------------------------------------------------
+      // CHECK ALIGNMENT
+      // -------------------------------------------------------
+
+      if (fabs(error) <= finalTolerance)
+      {
+        stableFrames++;
+      }
+      else
+      {
+        stableFrames = 0;
+      }
+
+      // -------------------------------------------------------
+      // FINISHED
+      // -------------------------------------------------------
+
+      if (stableFrames >= requiredStableFrames)
+      {
+        driveBrake();
+
+        Brain.Screen.clearScreen();
+
+        Brain.Screen.printAt(10, 30,
+                             "APRILTAG LOCKED");
+
+        Brain.Screen.printAt(10, 60,
+                             "ID: %d",
+                             targetID);
+
+        Brain.Screen.printAt(10, 90,
+                             "X: %.1f",
+                             tagX);
+
+        Brain.Screen.printAt(10, 120,
+                             "ERROR: %.1f",
+                             error);
+
+        Brain.Screen.printAt(10, 150,
+                             "WIDTH: %.1f",
+                             tagWidth);
+
+        Brain.Screen.printAt(10, 180,
+                             "STABLE: %d",
+                             stableFrames);
+
+        wait(300, msec);
+
+        return;
+      }
+
+      // -------------------------------------------------------
+      // ROTATE IN PLACE
+      // -------------------------------------------------------
+
+      double turnSpeed =
+          error * turnKp;
+
+      // Clamp
+      if (turnSpeed > maxTurnSpeed)
+        turnSpeed = maxTurnSpeed;
+
+      if (turnSpeed < -maxTurnSpeed)
+        turnSpeed = -maxTurnSpeed;
+
+      // Minimum turning speed so the robot doesn't get stuck.
+      if (fabs(turnSpeed) < minTurnSpeed)
+      {
+        if (turnSpeed > 0)
+          turnSpeed = minTurnSpeed;
+        else if (turnSpeed < 0)
+          turnSpeed = -minTurnSpeed;
+        else
+          turnSpeed = 0;
+      }
+
+      // -------------------------------------------------------
+      // ROTATE IN PLACE
+      // -------------------------------------------------------
+
+      LeftFront.spin(forward, turnSpeed, pct);
+      LeftBack.spin(forward, turnSpeed, pct);
+
+      RightFront.spin(forward, -turnSpeed, pct);
+      RightBack.spin(forward, -turnSpeed, pct);
+
+      // -------------------------------------------------------
+      // DEBUG
+      // -------------------------------------------------------
 
       Brain.Screen.clearScreen();
 
       Brain.Screen.printAt(10, 30,
-                           "TAG %d REACHED",
-                           targetID);
+                           "FINAL ALIGNMENT");
 
       Brain.Screen.printAt(10, 60,
-                           "WIDTH: %.0f",
+                           "ID: %d",
+                           targetID);
+
+      Brain.Screen.printAt(10, 90,
+                           "X: %.1f",
+                           tagX);
+
+      Brain.Screen.printAt(10, 120,
+                           "ERROR: %.1f",
+                           error);
+
+      Brain.Screen.printAt(10, 150,
+                           "WIDTH: %.1f",
                            tagWidth);
 
-      break;
+      Brain.Screen.printAt(10, 180,
+                           "STABLE: %d/%d",
+                           stableFrames,
+                           requiredStableFrames);
+
+      wait(30, msec);
+
+      continue;
     }
 
+    // =========================================================
+    // NORMAL APPROACH
+    // =========================================================
+
+    double correction =
+        error * turnKp;
+
+    // Limit steering
+    if (correction > 20)
+      correction = 20;
+
+    if (correction < -20)
+      correction = -20;
+
+    double speed = driveSpeed;
+
+    // Slow down as we approach.
+    if (tagWidth > targetWidth * 0.55)
+      speed = 25;
+
+    if (tagWidth > targetWidth * 0.65)
+      speed = 18;
+
+    // If we're already nearly centered, slow down further.
+    if (fabs(error) < 10)
+      speed = 15;
+
     // ---------------------------------------------------------
-    // STEERING
-    // ---------------------------------------------------------
-
-    double correction = error * turnKp;
-
-    // Limit steering correction
-    if (correction > 30)
-      correction = 30;
-
-    if (correction < -30)
-      correction = -30;
-
-    // ---------------------------------------------------------
-    // SPEED
-    // ---------------------------------------------------------
-
-    double speed = maxSpeed;
-
-    if (tagWidth > targetWidth * 0.70)
-    {
-      speed = 20;
-    }
-    else if (tagWidth > targetWidth * 0.50)
-    {
-      speed = 30;
-    }
-
-    // ---------------------------------------------------------
-    // BACKWARD DRIVE
-    //
-    // Negative speed = reverse because of your drivetrain setup.
+    // BACKWARD APPROACH
     // ---------------------------------------------------------
 
     double leftSpeed =
@@ -644,22 +805,11 @@ void driveToAprilTag(int targetID, int targetWidth = 120)
     double rightSpeed =
         -speed - correction;
 
-    // Clamp
-    if (leftSpeed > 100)
-      leftSpeed = 100;
+    leftSpeed =
+        fmax(-100, fmin(100, leftSpeed));
 
-    if (leftSpeed < -100)
-      leftSpeed = -100;
-
-    if (rightSpeed > 100)
-      rightSpeed = 100;
-
-    if (rightSpeed < -100)
-      rightSpeed = -100;
-
-    // ---------------------------------------------------------
-    // DRIVE BACKWARD
-    // ---------------------------------------------------------
+    rightSpeed =
+        fmax(-100, fmin(100, rightSpeed));
 
     LeftFront.spin(forward, leftSpeed, pct);
     LeftBack.spin(forward, leftSpeed, pct);
@@ -674,33 +824,33 @@ void driveToAprilTag(int targetID, int targetWidth = 120)
     Brain.Screen.clearScreen();
 
     Brain.Screen.printAt(10, 30,
-                         "APRILTAG: %d",
-                         targetID);
+                         "APRILTAG APPROACH");
 
     Brain.Screen.printAt(10, 60,
-                         "REVERSE");
+                         "ID: %d",
+                         targetID);
 
     Brain.Screen.printAt(10, 90,
-                         "TAG X: %.0f",
+                         "X: %.1f",
                          tagX);
 
     Brain.Screen.printAt(10, 120,
-                         "WIDTH: %.0f",
-                         tagWidth);
-
-    Brain.Screen.printAt(10, 150,
-                         "ERROR: %.0f",
+                         "ERROR: %.1f",
                          error);
 
+    Brain.Screen.printAt(10, 150,
+                         "WIDTH: %.1f",
+                         tagWidth);
+
     Brain.Screen.printAt(10, 180,
-                         "LEFT: %.1f",
+                         "L: %.1f",
                          leftSpeed);
 
     Brain.Screen.printAt(10, 210,
-                         "RIGHT: %.1f",
+                         "R: %.1f",
                          rightSpeed);
 
-    wait(50, msec);
+    wait(30, msec);
   }
 }
 
@@ -712,10 +862,10 @@ void doubleTurn()
   driveBrake();
   wait(100, msec);
   inchDrive(8, 20);
-  wait(1000, msec);
+  wait(500, msec);
 }
 
-void brakeNwait(int waitTime)
+void brakeNwait(int waitTime = 500)
 {
   driveBrake();
   wait(waitTime, msec);
@@ -801,7 +951,7 @@ void autonomous(void)
     Brain.Screen.printAt(10, 30, "LF rev: %.3f", LeftFront.position(rev));
   case 2:
     // april tag
-    driveToAprilTag(0);
+    alignToAprilTag(0);
     break;
   case 3:
     // first auton using 1st full asian strat
@@ -811,16 +961,28 @@ void autonomous(void)
     gyroTurn(-91);
     brakeNwait(500);
     inchDrive(-13, 40);
-    driveToAprilTag(3, 80);
+    alignToAprilTag(3, 80);
+    // score
     brakeNwait(500);
-    inchDrive(16, 40);
-    brakeNwait(500);
-    gyroTurn(-23);
-    inchDrive(-24, 40);
+    inchDrive(14, 40);
     brakeNwait(500);
     gyroTurn(-40);
+    inchDrive(-14, 40);
+    // at wall
+    brakeNwait(500);
+    gyroTurn(40);
+    brakeNwait(500);
+    inchDrive(-6, 40);
+    brakeNwait();
+    gyroTurn(-90);
     inchDrive(-4, 40);
-    inchDrive(10, 30);
+    brakeNwait(500);
+    inchDrive(2, 30);
+    brakeNwait(500);
+    // turn around
+    gyroTurn(180);
+    brakeNwait(500);
+    inchDrive(-7, 30);
     break;
   }
 }
