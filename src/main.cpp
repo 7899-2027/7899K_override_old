@@ -224,7 +224,7 @@ void Display()
   LineNumber = 0;
 }
 
-int autonSelect = 3;
+int autonSelect = 2;
 int autonMax = 5;
 int autonMin = 0;
 bool selectingAuton = true;
@@ -854,6 +854,306 @@ void alignToAprilTag(int targetID, int targetWidth = 80)
   }
 }
 
+void turnToAprilTag(int targetID, int direction, double speed)
+{
+  // ---------------------------------------------------------
+  // SETTINGS
+  // ---------------------------------------------------------
+
+  const double cameraCenterX = 158.0;
+
+  // How close the AprilTag needs to be to the center
+  // of the camera.
+  const double alignmentTolerance = 5.0;
+
+  // Number of consecutive readings that must be centered.
+  const int requiredStableFrames = 6;
+
+  // How fast to turn while making the final correction.
+  const double finalTurnSpeed = 8.0;
+
+  // Safety timeout.
+  const int maxTime = 8000;
+
+  timer searchTimer;
+
+  int stableFrames = 0;
+
+  // ---------------------------------------------------------
+  // CHECK INPUTS
+  // ---------------------------------------------------------
+
+  if (direction != 1 && direction != -1)
+  {
+    direction = 1;
+  }
+
+  if (speed < 1)
+    speed = 1;
+
+  if (speed > 100)
+    speed = 100;
+
+  // ---------------------------------------------------------
+  // SEARCH FOR TAG
+  // ---------------------------------------------------------
+
+  while (searchTimer.time(msec) < maxTime)
+  {
+    int count = AISensor.takeSnapshot(aivision::ALL_TAGS);
+
+    int targetIndex = -1;
+
+    // -------------------------------------------------------
+    // LOOK FOR THE SPECIFIC TAG
+    // -------------------------------------------------------
+
+    for (int i = 0; i < count; i++)
+    {
+      if (AISensor.objects[i].exists &&
+          AISensor.objects[i].id == targetID)
+      {
+        targetIndex = i;
+        break;
+      }
+    }
+
+    // =======================================================
+    // TAG NOT FOUND
+    // =======================================================
+
+    if (targetIndex == -1)
+    {
+      stableFrames = 0;
+
+      double turnSpeed = speed * direction;
+
+      // Search in requested direction
+      LeftFront.spin(forward, turnSpeed, pct);
+      LeftBack.spin(forward, turnSpeed, pct);
+
+      RightFront.spin(forward, -turnSpeed, pct);
+      RightBack.spin(forward, -turnSpeed, pct);
+
+      Brain.Screen.clearScreen();
+
+      Brain.Screen.printAt(10, 30,
+                           "SEARCHING");
+
+      Brain.Screen.printAt(10, 60,
+                           "TARGET: %d",
+                           targetID);
+
+      if (direction == 1)
+      {
+        Brain.Screen.printAt(10, 90,
+                             "DIRECTION: CW");
+      }
+      else
+      {
+        Brain.Screen.printAt(10, 90,
+                             "DIRECTION: CCW");
+      }
+
+      Brain.Screen.printAt(10, 120,
+                           "SPEED: %.0f",
+                           speed);
+
+      Brain.Screen.printAt(10, 150,
+                           "TIME: %d",
+                           searchTimer.time(msec));
+
+      wait(30, msec);
+
+      continue;
+    }
+
+    // =======================================================
+    // TAG FOUND
+    // =======================================================
+
+    double tagX =
+        AISensor.objects[targetIndex].centerX;
+
+    double error =
+        tagX - cameraCenterX;
+
+    // -------------------------------------------------------
+    // DISPLAY THAT WE FOUND IT
+    // -------------------------------------------------------
+
+    Brain.Screen.clearScreen();
+
+    Brain.Screen.printAt(10, 30,
+                         "TAG FOUND!");
+
+    Brain.Screen.printAt(10, 60,
+                         "ID: %d",
+                         AISensor.objects[targetIndex].id);
+
+    Brain.Screen.printAt(10, 90,
+                         "X: %.1f",
+                         tagX);
+
+    Brain.Screen.printAt(10, 120,
+                         "ERROR: %.1f",
+                         error);
+
+    // =======================================================
+    // TAG CENTERED
+    // =======================================================
+
+    if (fabs(error) <= alignmentTolerance)
+    {
+      stableFrames++;
+    }
+    else
+    {
+      stableFrames = 0;
+    }
+
+    if (stableFrames >= requiredStableFrames)
+    {
+      driveBrake();
+
+      Brain.Screen.clearScreen();
+
+      Brain.Screen.printAt(10, 30,
+                           "TAG ALIGNED!");
+
+      Brain.Screen.printAt(10, 60,
+                           "ID: %d",
+                           targetID);
+
+      Brain.Screen.printAt(10, 90,
+                           "X: %.1f",
+                           tagX);
+
+      Brain.Screen.printAt(10, 120,
+                           "ERROR: %.1f",
+                           error);
+
+      wait(250, msec);
+
+      return;
+    }
+
+    // =======================================================
+    // FINAL ALIGNMENT
+    // =======================================================
+
+    double correction =
+        error * 0.25;
+
+    // Limit correction
+    if (correction > finalTurnSpeed)
+      correction = finalTurnSpeed;
+
+    if (correction < -finalTurnSpeed)
+      correction = -finalTurnSpeed;
+
+    // Minimum correction so the robot doesn't get stuck
+    if (fabs(error) > alignmentTolerance &&
+        fabs(correction) < 4)
+    {
+      if (error > 0)
+        correction = 4;
+      else
+        correction = -4;
+    }
+
+    // -------------------------------------------------------
+    // TURN TOWARD CENTER
+    // -------------------------------------------------------
+
+    LeftFront.spin(forward, correction, pct);
+    LeftBack.spin(forward, correction, pct);
+
+    RightFront.spin(forward, -correction, pct);
+    RightBack.spin(forward, -correction, pct);
+
+    Brain.Screen.printAt(10, 150,
+                         "CORRECTION: %.1f",
+                         correction);
+
+    Brain.Screen.printAt(10, 180,
+                         "STABLE: %d/%d",
+                         stableFrames,
+                         requiredStableFrames);
+
+    wait(30, msec);
+  }
+
+  // =========================================================
+  // TIMEOUT
+  // =========================================================
+
+  driveBrake();
+
+  Brain.Screen.clearScreen();
+
+  Brain.Screen.printAt(10, 30,
+                       "APRILTAG TIMEOUT");
+
+  Brain.Screen.printAt(10, 60,
+                       "TARGET: %d",
+                       targetID);
+
+  wait(300, msec);
+}
+
+void debugAprilTag(int targetID)
+{
+  while (true)
+  {
+    int count = AISensor.takeSnapshot(aivision::ALL_TAGS);
+
+    Brain.Screen.clearScreen();
+
+    Brain.Screen.printAt(10, 30,
+                         "Snapshot count: %d",
+                         count);
+
+    Brain.Screen.printAt(10, 60,
+                         "Object count: %d",
+                         AISensor.objectCount);
+
+    bool found = false;
+
+    for (int i = 0; i < count; i++)
+    {
+      if (AISensor.objects[i].exists)
+      {
+        Brain.Screen.printAt(10, 100 + i * 40,
+                             "Object %d: ID=%d X=%.0f",
+                             i,
+                             AISensor.objects[i].id,
+                             AISensor.objects[i].centerX);
+
+        if (AISensor.objects[i].id == targetID)
+        {
+          found = true;
+        }
+      }
+    }
+
+    if (found)
+    {
+      Brain.Screen.printAt(10, 230,
+                           "TARGET %d FOUND!",
+                           targetID);
+    }
+    else
+    {
+      Brain.Screen.printAt(10, 230,
+                           "TARGET %d NOT FOUND",
+                           targetID);
+    }
+
+    wait(100, msec);
+  }
+}
+
 void doubleTurn()
 {
   inchDrive(5, 20);
@@ -951,7 +1251,8 @@ void autonomous(void)
     Brain.Screen.printAt(10, 30, "LF rev: %.3f", LeftFront.position(rev));
   case 2:
     // april tag
-    alignToAprilTag(0);
+    turnToAprilTag(3, -1, 10);
+    alignToAprilTag(3);
     break;
   case 3:
     // first auton using 1st full asian strat
