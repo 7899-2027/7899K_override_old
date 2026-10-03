@@ -42,6 +42,10 @@ double x = 0;
 double DRIVE_KP = 0.8;
 double MAX_CORRECTION = 5; // Maximum gyro correction in percent
 
+double clawCurrentLimit = 0.6;
+bool currentMax = false;
+
+// drive functions
 void tankDrive(double lspeed, double rspeed, int wt)
 {
   lspeed = lspeed * 1;
@@ -89,9 +93,6 @@ void arcadeDrive()
   RightBack.spin(forward, rightSpeed, percent);
 }
 
-double clawCurrentLimit = 0.6;
-bool currentMax = false;
-
 int clawIntake()
 {
   while (true)
@@ -117,6 +118,7 @@ int clawIntake()
 }
 
 void driveBrake()
+
 {
   LeftFront.stop(brakeType::brake);
   LeftBack.stop(brakeType::brake);
@@ -124,7 +126,8 @@ void driveBrake()
   RightBack.stop(brakeType::brake);
 }
 
-// Health of the robot functions
+// display functions
+//  Health of the robot functions
 int YOFFSET = 20;   // First Line position
 int NewLineY = 20;  // Buffer Between Lines
 int LineNumber = 0; // What row the line is on(increments every new motor)
@@ -228,6 +231,8 @@ int autonSelect = 2;
 int autonMax = 5;
 int autonMin = 0;
 bool selectingAuton = true;
+
+// basic auton functions
 
 void drawGUI()
 {
@@ -466,63 +471,7 @@ void gyroTurn(double target)
   wait(100, msec);
 }
 
-void testAprilTags()
-
-{
-  while (true)
-  {
-    Brain.Screen.clearScreen();
-
-    // Check whether the AI Vision Sensor is connected
-    if (!AISensor.installed())
-    {
-      Brain.Screen.setPenColor(red);
-      Brain.Screen.printAt(10, 40, "AI VISION NOT CONNECTED");
-      Brain.Screen.printAt(10, 70, "Check Smart Port 6");
-      wait(500, msec);
-      continue;
-    }
-
-    Brain.Screen.setPenColor(green);
-    Brain.Screen.printAt(10, 40, "AI VISION CONNECTED");
-
-    // Take an AprilTag snapshot
-    int count = AISensor.takeSnapshot(aivision::ALL_TAGS);
-
-    Brain.Screen.setPenColor(white);
-
-    Brain.Screen.printAt(10, 80, "Return: %d", count);
-    Brain.Screen.printAt(10, 110, "Count: %d", AISensor.objectCount);
-
-    if (AISensor.objectCount > 0 &&
-        AISensor.objects[0].exists)
-    {
-      Brain.Screen.printAt(10, 140,
-                           "TAG ID: %d",
-                           AISensor.objects[0].id);
-
-      Brain.Screen.printAt(10, 170,
-                           "X: %.0f",
-                           AISensor.objects[0].centerX);
-
-      Brain.Screen.printAt(10, 200,
-                           "Y: %.0f",
-                           AISensor.objects[0].centerY);
-
-      Brain.Screen.printAt(10, 230,
-                           "W: %.0f H: %.0f",
-                           AISensor.objects[0].width,
-                           AISensor.objects[0].height);
-    }
-    else
-    {
-      Brain.Screen.printAt(10, 140, "NO TAG");
-    }
-
-    wait(100, msec);
-  }
-}
-
+// april tag functions
 void alignToAprilTag(int targetID, int targetWidth = 80)
 {
   // ---------------------------------------------------------
@@ -854,60 +803,100 @@ void alignToAprilTag(int targetID, int targetWidth = 80)
   }
 }
 
+void debugAprilTag(int targetID)
+{
+  while (true)
+  {
+    int count = AISensor.takeSnapshot(aivision::ALL_TAGS);
+
+    if (count > 0)
+    {
+      int id = AISensor.objects[0].id;
+      int x = AISensor.objects[0].centerX;
+      int y = AISensor.objects[0].centerY;
+      int w = AISensor.objects[0].width;
+      int h = AISensor.objects[0].height;
+
+      Brain.Screen.clearScreen();
+
+      Brain.Screen.printAt(10, 30, "ID: %d", id);
+      Brain.Screen.printAt(10, 60, "X: %d", x);
+      Brain.Screen.printAt(10, 90, "Y: %d", y);
+      Brain.Screen.printAt(10, 120, "W: %d", w);
+      Brain.Screen.printAt(10, 150, "H: %d", h);
+    }
+
+    wait(100, msec);
+  }
+}
+
 void turnToAprilTag(int targetID, int direction, double speed)
 {
-  // ---------------------------------------------------------
+  // =========================================================
   // SETTINGS
-  // ---------------------------------------------------------
+  // =========================================================
 
+  // Your camera is facing backward, but its image center is
+  // still approximately 158 pixels.
   const double cameraCenterX = 158.0;
 
-  // How close the AprilTag needs to be to the center
-  // of the camera.
-  const double alignmentTolerance = 5.0;
+  // How close the tag must be to the center before we consider
+  // the robot aligned.
+  const double alignmentTolerance = 6.0;
 
-  // Number of consecutive readings that must be centered.
-  const int requiredStableFrames = 6;
+  // Proportional turning constant.
+  const double turnKp = 0.25;
 
-  // How fast to turn while making the final correction.
-  const double finalTurnSpeed = 8.0;
+  // Prevent excessively fast turning.
+  double maxTurnSpeed = speed;
 
-  // Safety timeout.
-  const int maxTime = 8000;
+  // Minimum speed needed to overcome drivetrain friction.
+  const double minTurnSpeed = 5.0;
 
-  timer searchTimer;
+  // Number of consecutive centered readings required.
+  const int requiredStableFrames = 5;
+
+  // If the tag disappears this many consecutive snapshots
+  // during alignment, return to searching.
+  const int maxLostFrames = 5;
 
   int stableFrames = 0;
+  int lostFrames = 0;
 
-  // ---------------------------------------------------------
-  // CHECK INPUTS
-  // ---------------------------------------------------------
-
+  // Make sure direction is valid.
   if (direction != 1 && direction != -1)
   {
     direction = 1;
   }
 
-  if (speed < 1)
-    speed = 1;
-
-  if (speed > 100)
-    speed = 100;
-
-  // ---------------------------------------------------------
-  // SEARCH FOR TAG
-  // ---------------------------------------------------------
-
-  while (searchTimer.time(msec) < maxTime)
+  // Limit speed.
+  if (speed < 5)
   {
+    speed = 5;
+  }
+
+  if (speed > 50)
+  {
+    speed = 50;
+  }
+
+  maxTurnSpeed = speed;
+
+  // =========================================================
+  // MAIN SEARCH / ALIGNMENT LOOP
+  // =========================================================
+
+  while (true)
+  {
+    // -------------------------------------------------------
+    // TAKE SNAPSHOT
+    // -------------------------------------------------------
+
     int count = AISensor.takeSnapshot(aivision::ALL_TAGS);
 
     int targetIndex = -1;
 
-    // -------------------------------------------------------
-    // LOOK FOR THE SPECIFIC TAG
-    // -------------------------------------------------------
-
+    // Find the requested AprilTag.
     for (int i = 0; i < count; i++)
     {
       if (AISensor.objects[i].exists &&
@@ -925,233 +914,567 @@ void turnToAprilTag(int targetID, int direction, double speed)
     if (targetIndex == -1)
     {
       stableFrames = 0;
+      lostFrames++;
 
-      double turnSpeed = speed * direction;
-
-      // Search in requested direction
-      LeftFront.spin(forward, turnSpeed, pct);
-      LeftBack.spin(forward, turnSpeed, pct);
-
-      RightFront.spin(forward, -turnSpeed, pct);
-      RightBack.spin(forward, -turnSpeed, pct);
+      // If we were already close to alignment, don't immediately
+      // start spinning wildly because of one bad frame.
+      driveBrake();
 
       Brain.Screen.clearScreen();
 
       Brain.Screen.printAt(10, 30,
-                           "SEARCHING");
-
-      Brain.Screen.printAt(10, 60,
-                           "TARGET: %d",
+                           "SEARCHING FOR %d",
                            targetID);
 
-      if (direction == 1)
+      Brain.Screen.printAt(10, 60,
+                           "Objects: %d",
+                           AISensor.objectCount);
+
+      Brain.Screen.printAt(10, 90,
+                           "Lost: %d/%d",
+                           lostFrames,
+                           maxLostFrames);
+
+      // If we've lost it for several frames, actively search.
+      if (lostFrames >= maxLostFrames)
       {
-        Brain.Screen.printAt(10, 90,
-                             "DIRECTION: CW");
+        double searchSpeed = maxTurnSpeed * direction;
+
+        LeftFront.spin(forward, searchSpeed, pct);
+        LeftBack.spin(forward, searchSpeed, pct);
+
+        RightFront.spin(forward, -searchSpeed, pct);
+        RightBack.spin(forward, -searchSpeed, pct);
       }
-      else
-      {
-        Brain.Screen.printAt(10, 90,
-                             "DIRECTION: CCW");
-      }
 
-      Brain.Screen.printAt(10, 120,
-                           "SPEED: %.0f",
-                           speed);
-
-      Brain.Screen.printAt(10, 150,
-                           "TIME: %d",
-                           searchTimer.time(msec));
-
-      wait(30, msec);
-
+      wait(40, msec);
       continue;
     }
 
+    // We found it again.
+    lostFrames = 0;
+
     // =======================================================
-    // TAG FOUND
+    // READ TAG POSITION
     // =======================================================
 
     double tagX =
         AISensor.objects[targetIndex].centerX;
 
+    // IMPORTANT:
+    // The camera is facing backward, so its X direction is
+    // reversed relative to the robot.
+    //
+    // X = 158 means centered.
+    //
+    // Physical robot-left  -> X gets larger
+    // Physical robot-right -> X gets smaller
     double error =
-        tagX - cameraCenterX;
+        cameraCenterX - tagX;
+
+    // =======================================================
+    // CHECK WHETHER WE ARE CENTERED
+    // =======================================================
+
+    if (fabs(error) <= alignmentTolerance)
+    {
+      // Stop turning while we verify that we're really centered.
+      driveBrake();
+
+      stableFrames++;
+
+      Brain.Screen.clearScreen();
+
+      Brain.Screen.printAt(10, 30,
+                           "CENTERING TAG %d",
+                           targetID);
+
+      Brain.Screen.printAt(10, 60,
+                           "X: %.1f",
+                           tagX);
+
+      Brain.Screen.printAt(10, 90,
+                           "ERROR: %.1f",
+                           error);
+
+      Brain.Screen.printAt(10, 120,
+                           "STABLE: %d/%d",
+                           stableFrames,
+                           requiredStableFrames);
+
+      // -----------------------------------------------------
+      // FULLY ALIGNED
+      // -----------------------------------------------------
+
+      if (stableFrames >= requiredStableFrames)
+      {
+        driveBrake();
+
+        Brain.Screen.clearScreen();
+
+        Brain.Screen.printAt(10, 30,
+                             "APRILTAG ALIGNED!");
+
+        Brain.Screen.printAt(10, 60,
+                             "ID: %d",
+                             targetID);
+
+        Brain.Screen.printAt(10, 90,
+                             "X: %.1f",
+                             tagX);
+
+        Brain.Screen.printAt(10, 120,
+                             "ERROR: %.1f",
+                             error);
+
+        Brain.Screen.printAt(10, 150,
+                             "STABLE: %d",
+                             stableFrames);
+
+        wait(250, msec);
+
+        // Make absolutely sure the motors remain stopped
+        // before returning to autonomous.
+        driveBrake();
+
+        return;
+      }
+
+      wait(40, msec);
+      continue;
+    }
+
+    // =======================================================
+    // NOT CENTERED
+    // =======================================================
+
+    // The tag moved outside our tolerance, so the consecutive
+    // centered-frame counter must be reset.
+    stableFrames = 0;
 
     // -------------------------------------------------------
-    // DISPLAY THAT WE FOUND IT
+    // PROPORTIONAL TURNING
+    // -------------------------------------------------------
+
+    double turnSpeed =
+        fabs(error) * turnKp;
+
+    // Maximum speed.
+    if (turnSpeed > maxTurnSpeed)
+    {
+      turnSpeed = maxTurnSpeed;
+    }
+
+    // Minimum speed to overcome friction.
+    if (turnSpeed < minTurnSpeed)
+    {
+      turnSpeed = minTurnSpeed;
+    }
+
+    // -------------------------------------------------------
+    // DETERMINE PHYSICAL TURN DIRECTION
+    // -------------------------------------------------------
+
+    // Because the camera is facing backward:
+    //
+    // error > 0:
+    //     Tag is physically to robot RIGHT
+    //     Turn robot RIGHT
+    //
+    // error < 0:
+    //     Tag is physically to robot LEFT
+    //     Turn robot LEFT
+
+    double signedTurnSpeed;
+
+    if (error > 0)
+    {
+      signedTurnSpeed = turnSpeed;
+    }
+    else
+    {
+      signedTurnSpeed = -turnSpeed;
+    }
+
+    // -------------------------------------------------------
+    // TURN
+    // -------------------------------------------------------
+
+    LeftFront.spin(forward, signedTurnSpeed, pct);
+    LeftBack.spin(forward, signedTurnSpeed, pct);
+
+    RightFront.spin(forward, -signedTurnSpeed, pct);
+    RightBack.spin(forward, -signedTurnSpeed, pct);
+
+    // -------------------------------------------------------
+    // DEBUG
     // -------------------------------------------------------
 
     Brain.Screen.clearScreen();
 
     Brain.Screen.printAt(10, 30,
-                         "TAG FOUND!");
+                         "ALIGNING TAG %d",
+                         targetID);
+
+    Brain.Screen.printAt(10, 60,
+                         "X: %.1f",
+                         tagX);
+
+    Brain.Screen.printAt(10, 90,
+                         "ERROR: %.1f",
+                         error);
+
+    Brain.Screen.printAt(10, 120,
+                         "TURN: %.1f",
+                         signedTurnSpeed);
+
+    Brain.Screen.printAt(10, 150,
+                         "LOST: %d",
+                         lostFrames);
+
+    wait(30, msec);
+  }
+}
+
+void centerAprilTag(int targetID)
+{
+  // =========================================================
+  // CAMERA
+  // =========================================================
+
+  const double cameraCenterX = 158.0;
+
+  // Final acceptable alignment.
+  const double centerTolerance = 8.0;
+
+  // Larger zone where we slow down BEFORE reaching center.
+  const double slowZone = 25.0;
+
+  // Number of consecutive centered readings required.
+  const int requiredStableFrames = 6;
+
+  // =========================================================
+  // TURN CONTROL
+  // =========================================================
+
+  // Far from center = moderate correction.
+  const double farKp = 0.10;
+
+  // Close to center = VERY gentle correction.
+  const double nearKp = 0.045;
+
+  // Maximum turning speed when far away.
+  const double maxFarSpeed = 10.0;
+
+  // Maximum turning speed near the center.
+  const double maxNearSpeed = 4.0;
+
+  // Minimum speed needed to actually move the drivetrain.
+  const double minTurnSpeed = 2.0;
+
+  // =========================================================
+  // LOST TAG
+  // =========================================================
+
+  const int maxLostFrames = 5;
+
+  int stableFrames = 0;
+  int lostFrames = 0;
+
+  // =========================================================
+  // START STOPPED
+  // =========================================================
+
+  driveBrake();
+
+  wait(100, msec);
+
+  // =========================================================
+  // MAIN LOOP
+  // =========================================================
+
+  while (true)
+  {
+    // -------------------------------------------------------
+    // SNAPSHOT
+    // -------------------------------------------------------
+
+    int count =
+        AISensor.takeSnapshot(aivision::ALL_TAGS);
+
+    int targetIndex = -1;
+
+    for (int i = 0; i < count; i++)
+    {
+      if (AISensor.objects[i].exists &&
+          AISensor.objects[i].id == targetID)
+      {
+        targetIndex = i;
+        break;
+      }
+    }
+
+    // =======================================================
+    // TAG LOST
+    // =======================================================
+
+    if (targetIndex == -1)
+    {
+      lostFrames++;
+      stableFrames = 0;
+
+      // NEVER keep rotating when the tag disappears.
+      driveBrake();
+
+      Brain.Screen.clearScreen();
+
+      Brain.Screen.printAt(10, 30,
+                           "TAG %d LOST",
+                           targetID);
+
+      Brain.Screen.printAt(10, 60,
+                           "Lost: %d/%d",
+                           lostFrames,
+                           maxLostFrames);
+
+      if (lostFrames >= maxLostFrames)
+      {
+        driveBrake();
+
+        Brain.Screen.printAt(10, 100,
+                             "ALIGNMENT STOPPED");
+
+        wait(300, msec);
+
+        return;
+      }
+
+      wait(50, msec);
+      continue;
+    }
+
+    lostFrames = 0;
+
+    // =======================================================
+    // READ TAG
+    // =======================================================
+
+    double tagX =
+        AISensor.objects[targetIndex].centerX;
+
+    // Camera faces backward.
+    // X increasing = robot LEFT.
+    // X decreasing = robot RIGHT.
+    //
+    // X = 158 = centered.
+    double error = tagX - cameraCenterX;
+
+    double absoluteError =
+        fabs(error);
+
+    // =======================================================
+    // CENTER ZONE
+    // =======================================================
+
+    if (absoluteError <= centerTolerance)
+    {
+      // Completely stop turning.
+      driveBrake();
+
+      stableFrames++;
+
+      Brain.Screen.clearScreen();
+
+      Brain.Screen.printAt(10, 30,
+                           "CENTER ZONE");
+
+      Brain.Screen.printAt(10, 60,
+                           "X: %.1f",
+                           tagX);
+
+      Brain.Screen.printAt(10, 90,
+                           "Error: %.1f",
+                           error);
+
+      Brain.Screen.printAt(10, 120,
+                           "Stable: %d/%d",
+                           stableFrames,
+                           requiredStableFrames);
+
+      // -----------------------------------------------------
+      // SUCCESS
+      // -----------------------------------------------------
+
+      if (stableFrames >= requiredStableFrames)
+      {
+        driveBrake();
+
+        Brain.Screen.clearScreen();
+
+        Brain.Screen.printAt(10, 40,
+                             "APRILTAG LOCKED");
+
+        Brain.Screen.printAt(10, 80,
+                             "ID: %d",
+                             targetID);
+
+        Brain.Screen.printAt(10, 120,
+                             "X: %.1f",
+                             tagX);
+
+        Brain.Screen.printAt(10, 160,
+                             "Error: %.1f",
+                             error);
+
+        // Final hard stop.
+        driveBrake();
+
+        wait(500, msec);
+
+        driveBrake();
+
+        return;
+      }
+
+      wait(50, msec);
+      continue;
+    }
+
+    // Outside the center zone, so we're not stable.
+    stableFrames = 0;
+
+    // =======================================================
+    // CALCULATE TURN SPEED
+    // =======================================================
+
+    double turnSpeed;
+
+    // -------------------------------------------------------
+    // FAR FROM CENTER
+    // -------------------------------------------------------
+
+    if (absoluteError > slowZone)
+    {
+      turnSpeed =
+          absoluteError * farKp;
+
+      if (turnSpeed > maxFarSpeed)
+      {
+        turnSpeed = maxFarSpeed;
+      }
+
+      if (turnSpeed < minTurnSpeed)
+      {
+        turnSpeed = minTurnSpeed;
+      }
+    }
+
+    // -------------------------------------------------------
+    // NEAR CENTER
+    // -------------------------------------------------------
+
+    else
+    {
+      turnSpeed =
+          absoluteError * nearKp;
+
+      if (turnSpeed > maxNearSpeed)
+      {
+        turnSpeed = maxNearSpeed;
+      }
+
+      // Don't force a minimum speed if we're extremely close.
+      //
+      // This is important because forcing 2-5% at tiny errors
+      // is what causes hunting/oscillation.
+      if (turnSpeed < minTurnSpeed)
+      {
+        turnSpeed = minTurnSpeed;
+      }
+    }
+
+    // =======================================================
+    // FINAL DIRECTION
+    // =======================================================
+
+    double signedTurnSpeed;
+
+    if (error > 0)
+    {
+      // Tag is physically RIGHT.
+      signedTurnSpeed = turnSpeed;
+    }
+    else
+    {
+      // Tag is physically LEFT.
+      signedTurnSpeed = -turnSpeed;
+    }
+
+    // =======================================================
+    // TURN
+    // =======================================================
+
+    LeftFront.spin(forward,
+                   signedTurnSpeed,
+                   pct);
+
+    LeftBack.spin(forward,
+                  signedTurnSpeed,
+                  pct);
+
+    RightFront.spin(forward,
+                    -signedTurnSpeed,
+                    pct);
+
+    RightBack.spin(forward,
+                   -signedTurnSpeed,
+                   pct);
+
+    // =======================================================
+    // DEBUG
+    // =======================================================
+
+    Brain.Screen.clearScreen();
+
+    Brain.Screen.printAt(10, 30,
+                         "VISION ALIGN");
 
     Brain.Screen.printAt(10, 60,
                          "ID: %d",
-                         AISensor.objects[targetIndex].id);
+                         targetID);
 
     Brain.Screen.printAt(10, 90,
                          "X: %.1f",
                          tagX);
 
     Brain.Screen.printAt(10, 120,
-                         "ERROR: %.1f",
+                         "Error: %.1f",
                          error);
 
-    // =======================================================
-    // TAG CENTERED
-    // =======================================================
+    Brain.Screen.printAt(10, 150,
+                         "Turn: %.1f",
+                         signedTurnSpeed);
 
-    if (fabs(error) <= alignmentTolerance)
+    if (absoluteError > slowZone)
     {
-      stableFrames++;
+      Brain.Screen.printAt(10, 180,
+                           "ZONE: FAR");
     }
     else
     {
-      stableFrames = 0;
+      Brain.Screen.printAt(10, 180,
+                           "ZONE: SLOW");
     }
 
-    if (stableFrames >= requiredStableFrames)
-    {
-      driveBrake();
-
-      Brain.Screen.clearScreen();
-
-      Brain.Screen.printAt(10, 30,
-                           "TAG ALIGNED!");
-
-      Brain.Screen.printAt(10, 60,
-                           "ID: %d",
-                           targetID);
-
-      Brain.Screen.printAt(10, 90,
-                           "X: %.1f",
-                           tagX);
-
-      Brain.Screen.printAt(10, 120,
-                           "ERROR: %.1f",
-                           error);
-
-      wait(250, msec);
-
-      return;
-    }
-
-    // =======================================================
-    // FINAL ALIGNMENT
-    // =======================================================
-
-    double correction =
-        error * 0.25;
-
-    // Limit correction
-    if (correction > finalTurnSpeed)
-      correction = finalTurnSpeed;
-
-    if (correction < -finalTurnSpeed)
-      correction = -finalTurnSpeed;
-
-    // Minimum correction so the robot doesn't get stuck
-    if (fabs(error) > alignmentTolerance &&
-        fabs(correction) < 4)
-    {
-      if (error > 0)
-        correction = 4;
-      else
-        correction = -4;
-    }
-
-    // -------------------------------------------------------
-    // TURN TOWARD CENTER
-    // -------------------------------------------------------
-
-    LeftFront.spin(forward, correction, pct);
-    LeftBack.spin(forward, correction, pct);
-
-    RightFront.spin(forward, -correction, pct);
-    RightBack.spin(forward, -correction, pct);
-
-    Brain.Screen.printAt(10, 150,
-                         "CORRECTION: %.1f",
-                         correction);
-
-    Brain.Screen.printAt(10, 180,
-                         "STABLE: %d/%d",
-                         stableFrames,
-                         requiredStableFrames);
-
-    wait(30, msec);
+    wait(50, msec);
   }
-
-  // =========================================================
-  // TIMEOUT
-  // =========================================================
-
-  driveBrake();
-
-  Brain.Screen.clearScreen();
-
-  Brain.Screen.printAt(10, 30,
-                       "APRILTAG TIMEOUT");
-
-  Brain.Screen.printAt(10, 60,
-                       "TARGET: %d",
-                       targetID);
-
-  wait(300, msec);
 }
 
-void debugAprilTag(int targetID)
+void gyroThenVision(double angle, int targetID)
 {
-  while (true)
-  {
-    int count = AISensor.takeSnapshot(aivision::ALL_TAGS);
-
-    Brain.Screen.clearScreen();
-
-    Brain.Screen.printAt(10, 30,
-                         "Snapshot count: %d",
-                         count);
-
-    Brain.Screen.printAt(10, 60,
-                         "Object count: %d",
-                         AISensor.objectCount);
-
-    bool found = false;
-
-    for (int i = 0; i < count; i++)
-    {
-      if (AISensor.objects[i].exists)
-      {
-        Brain.Screen.printAt(10, 100 + i * 40,
-                             "Object %d: ID=%d X=%.0f",
-                             i,
-                             AISensor.objects[i].id,
-                             AISensor.objects[i].centerX);
-
-        if (AISensor.objects[i].id == targetID)
-        {
-          found = true;
-        }
-      }
-    }
-
-    if (found)
-    {
-      Brain.Screen.printAt(10, 230,
-                           "TARGET %d FOUND!",
-                           targetID);
-    }
-    else
-    {
-      Brain.Screen.printAt(10, 230,
-                           "TARGET %d NOT FOUND",
-                           targetID);
-    }
-
-    wait(100, msec);
-  }
+  gyroTurn(angle);
+  wait(100, msec);
+  centerAprilTag(targetID);
 }
 
 void doubleTurn()
@@ -1247,12 +1570,8 @@ void autonomous(void)
     inchDrive(40, 50);
 
     break;
-
-    Brain.Screen.printAt(10, 30, "LF rev: %.3f", LeftFront.position(rev));
   case 2:
-    // april tag
-    turnToAprilTag(3, -1, 10);
-    alignToAprilTag(3);
+    gyroThenVision(-90, 3);
     break;
   case 3:
     // first auton using 1st full asian strat
@@ -1367,14 +1686,15 @@ void usercontrol(void)
 //
 int main()
 {
-  // Set up callbacks for autonomous and driver control periods.
+
+  // Set up competition callbacks
   Competition.autonomous(autonomous);
   Competition.drivercontrol(usercontrol);
 
-  // Run the pre-autonomous function.
+  // Run pre-autonomous setup
   pre_auton();
 
-  // Prevent main from exiting with an infinite loop.
+  // Keep main alive
   while (true)
   {
     wait(100, msec);
