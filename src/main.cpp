@@ -115,6 +115,10 @@ void arcadeDrive()
 
 int clawIntake()
 {
+  LeftFront.stop(brakeType::brake);
+  LeftBack.stop(brakeType::brake);
+  RightFront.stop(brakeType::brake);
+  RightBack.stop(brakeType::brake);
   while (true)
   {
     // 1. If the motor spikes past the limit, trip the latch permanently
@@ -1627,6 +1631,18 @@ void usercontrol(void)
     else
     {
       tankDrive(Controller1.Axis3.position(), Controller1.Axis2.position(), 10);
+    }
+
+  // lift buttons
+
+    if (Controller1.ButtonR1.pressing())
+    {
+      liftUp();
+    }
+
+    if (Controller1.ButtonR2.pressing())
+    {
+      liftDown();
     }
 
     count++;
