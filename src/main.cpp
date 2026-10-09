@@ -1,4 +1,3 @@
-
 /*----------------------------------------------------------------------------*/
 /*                                                                            */
 /*    Module:       main.cpp                                                  */
@@ -34,23 +33,39 @@ motor rightLift(PORT1, ratio18_1, false);
 motor leftLift(PORT2, ratio18_1, false);
 
 motor claw(PORT5, ratio18_1, false);
-/*------------------------------------------------------------------------------------------------------------------------ */
+
+struct NamedMotor  {
+  motor &m;
+  const char *name; 
+};
+
+#define NAMED(mtr) { mtr, #mtr }
+
+NamedMotor driveMotors[] = {
+  NAMED(LeftFront),
+  NAMED(LeftBack),
+  NAMED(RightFront),
+  NAMED(RightBack),
+};
+
+const int NUM_DRIVE_MOTORS = sizeof(driveMotors) / sizeof(driveMotors[0]);
 
 // FUNCTIONS
 
-/*------------------------------------------------------------------------------------------------------------------------ */
 double pi = M_PI;
 double dia = 3.25; // wheel diameter
 double gR = 0.6;   // 36/60 gear ratio
 double x = 0;
 
+double DRIVE_KP = 0.8;
+double MAX_CORRECTION = 5; // Maximum gyro correction in percent
+
 double clawCurrentLimit = 0.6;
 bool currentMax = false;
 
-/*-------------------*/
-// Drive Functions
-/*-------------------*/
+bool selectingAuton = true;
 
+// drive functions
 void tankDrive(double lspeed, double rspeed, int wt)
 {
   lspeed = lspeed * 1;
@@ -98,13 +113,32 @@ void arcadeDrive()
   RightBack.spin(forward, rightSpeed, percent);
 }
 
-void driveBrake()
-
+int clawIntake()
 {
   LeftFront.stop(brakeType::brake);
   LeftBack.stop(brakeType::brake);
   RightFront.stop(brakeType::brake);
   RightBack.stop(brakeType::brake);
+  while (true)
+  {
+    // 1. If the motor spikes past the limit, trip the latch permanently
+    if (!currentMax && claw.current(amp) > clawCurrentLimit)
+    {
+      currentMax = true;
+    }
+    // 2. Override the motor if tripped
+    if (currentMax)
+    {
+      claw.stop(brakeType::coast);
+    }
+    else
+    {
+      currentMax = false;
+    }
+    // Check every 20 milliseconds
+    wait(20, msec);
+  }
+  return 0;
 }
 
 /*--------------------------------*/
@@ -127,117 +161,66 @@ void liftDown()
 // Display Functions
 /*--------------------*/
 
-//  Health of the robot functions
-int YOFFSET = 20;   // First Line position
-int NewLineY = 20;  // Buffer Between Lines
-int LineNumber = 0; // What row the line is on(increments every new motor)
 
-void MotorDisplay(int y, double curr, double temp)
+void driveBrake()
+
 {
+  LeftFront.stop(brakeType::brake);
+  LeftBack.stop(brakeType::brake);
+  RightFront.stop(brakeType::brake);
+  RightBack.stop(brakeType::brake);
+}
+
+// display functions
+//  Health of the robot functions
+const int YOFFSET = 20;
+const int ROW_HEIGHT = 30;
+
+void MotorDisplay(int y, double curr, double temp) {
   Brain.Screen.setFillColor(transparent);
-  Brain.Screen.printAt(5, YOFFSET + LineNumber * NewLineY, "Current: %.1fA", curr);
+  Brain.Screen.printAt(5, YOFFSET + y, "Current: %.1fA", curr);
   if (curr < 1)
     Brain.Screen.setFillColor(green);
   else if (curr >= 1 && curr <= 2.5)
     Brain.Screen.setFillColor(yellow);
   else
     Brain.Screen.setFillColor(red);
-  Brain.Screen.drawRectangle(140, YOFFSET + LineNumber * NewLineY - 15, 15, 15);
+  Brain.Screen.drawRectangle(140, YOFFSET + y - 15, 15, 15);
 
   Brain.Screen.setFillColor(transparent);
-  Brain.Screen.printAt(160, YOFFSET + LineNumber * NewLineY, "Temp: %.1fC", temp);
+  Brain.Screen.printAt(160, YOFFSET + y, "Temp: %.1fC", temp);
   if (temp < 45)
     Brain.Screen.setFillColor(green);
   else if (temp <= 50 && temp >= 45)
-    // TRUE and TRUE --> True
-    // TRUE and FALSE --> False
-    // FALSE and FALSE --> False
     Brain.Screen.setFillColor(yellow);
   else
     Brain.Screen.setFillColor(red);
-  Brain.Screen.drawRectangle(275, YOFFSET + LineNumber * NewLineY - 15, 15, 15);
+  Brain.Screen.drawRectangle(275, YOFFSET + y - 15, 15, 15);
   Brain.Screen.setFillColor(transparent);
 }
 
-void Display()
-{
-  double leftFrontCurr = LeftFront.current(amp);
-  double leftFrontTemp = LeftFront.temperature(celsius);
+void Display() {
+  // If the driver is still selecting an auton, don't draw motor stats over the GUI
+  if (selectingAuton) return;
 
-  double leftBackCurr = LeftBack.current(amp);
-  double leftBackTemp = LeftBack.temperature(celsius);
+  for (int i = 0; i < NUM_DRIVE_MOTORS; i++) {
+    NamedMotor &nm = driveMotors[i];
+    int y = 1 + i * ROW_HEIGHT;
 
-  double rightFrontCurr = RightFront.current(amp);
-  double rightFrontTemp = RightFront.temperature(celsius);
-
-  double rightBackCurr = RightBack.current(amp);
-  double rightBackTemp = RightBack.temperature(celsius);
-
-  LineNumber++;
-  if (LeftFront.installed())
-  {
-    MotorDisplay(0, leftFrontCurr, leftFrontTemp);
-    Brain.Screen.printAt(300, YOFFSET + LineNumber * NewLineY, "LeftFront");
+    if (nm.m.installed()) {
+      MotorDisplay(y, nm.m.current(amp), nm.m.temperature(celsius));
+      Brain.Screen.printAt(300, YOFFSET + y, false, "%s", nm.name);
+    } else {
+      Brain.Screen.printAt(5, YOFFSET + y, false, "%s Problem", nm.name);
+    }
   }
-  else
-  {
-    Brain.Screen.setPenColor(red);
-    Brain.Screen.printAt(5, YOFFSET + LineNumber * NewLineY, "LeftFront Problem");
-    Brain.Screen.setPenColor(white);
-  }
-  LineNumber++;
-
-  if (LeftBack.installed())
-  {
-    MotorDisplay(0, leftBackCurr, leftBackTemp);
-    Brain.Screen.printAt(300, YOFFSET + LineNumber * NewLineY, "LeftBack");
-  }
-  else
-  {
-    Brain.Screen.setPenColor(red);
-    Brain.Screen.printAt(5, YOFFSET + LineNumber * NewLineY, "LeftBack Problem");
-    Brain.Screen.setPenColor(white);
-  }
-  LineNumber++;
-
-  if (RightFront.installed())
-  {
-    MotorDisplay(60, rightFrontCurr, rightFrontTemp);
-    Brain.Screen.printAt(300, YOFFSET + LineNumber * NewLineY, "RightFront");
-  }
-  else
-  {
-    Brain.Screen.setPenColor(red);
-    Brain.Screen.printAt(5, YOFFSET + LineNumber * NewLineY, "RightFront Problem");
-    Brain.Screen.setPenColor(white);
-  }
-  LineNumber++;
-
-  if (RightBack.installed())
-  {
-    MotorDisplay(60, rightBackCurr, rightBackTemp);
-    Brain.Screen.printAt(300, YOFFSET + LineNumber * NewLineY, "RightBack");
-  }
-  else
-  {
-    Brain.Screen.setPenColor(red);
-    Brain.Screen.printAt(5, YOFFSET + LineNumber * NewLineY, "RightBack Problem");
-    Brain.Screen.setPenColor(white);
-  }
-  LineNumber = 0;
 }
 
 int autonSelect = 2;
 int autonMax = 5;
 int autonMin = 0;
-bool selectingAuton = true;
 
-/*-------------------------*/
-// Basic Auton Functions
-/*-------------------------*/
-
-double DRIVE_KP = 0.8;
-double MAX_CORRECTION = 5; // Maximum gyro correction in percent
+// basic auton functions
 
 void drawGUI()
 {
@@ -476,10 +459,7 @@ void gyroTurn(double target)
   wait(100, msec);
 }
 
-/*-------------------------*/
-// April Tag Functions
-/*-------------------------*/
-
+// april tag functions
 void alignToAprilTag(int targetID, int targetWidth = 80)
 {
   // ---------------------------------------------------------
@@ -1501,6 +1481,7 @@ void brakeNwait(int waitTime = 500)
   driveBrake();
   wait(waitTime, msec);
 }
+
 /*---------------------------------------------------------------------------*/
 /*                          Pre-Autonomous Functions                         */
 /*                                                                           */
@@ -1635,7 +1616,6 @@ void usercontrol(void)
   while (1)
   {
 
-    // arcade - tank drive switchert
     bool buttonState = Controller1.ButtonY.pressing();
 
     if (buttonState && !lastButtonState)
@@ -1653,7 +1633,7 @@ void usercontrol(void)
       tankDrive(Controller1.Axis3.position(), Controller1.Axis2.position(), 10);
     }
 
-    // lift buttons
+  // lift buttons
 
     if (Controller1.ButtonR1.pressing())
     {
@@ -1670,6 +1650,22 @@ void usercontrol(void)
     {
       Display();
       count = 0;
+    }
+
+    if (!currentMax)
+    {
+      if (Controller1.ButtonUp.pressing())
+      {
+        claw.spin(forward, 75, percent);
+      }
+      else if (Controller1.ButtonDown.pressing())
+      {
+        claw.spin(forward, -75, percent);
+      }
+      else
+      {
+        claw.stop(brakeType::coast);
+      }
     }
 
     // This is the main execution loop for the user control program.
