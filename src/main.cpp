@@ -30,22 +30,27 @@ motor LeftBack(PORT10, ratio6_1, true);
 motor RightFront(PORT11, ratio6_1, false);
 motor RightBack(PORT3, ratio6_1, false);
 
+motor rightLift(PORT1, ratio18_1, false);
+motor leftLift(PORT2, ratio18_1, false);
+
 motor claw(PORT5, ratio18_1, false);
+/*------------------------------------------------------------------------------------------------------------------------ */
 
 // FUNCTIONS
 
+/*------------------------------------------------------------------------------------------------------------------------ */
 double pi = M_PI;
 double dia = 3.25; // wheel diameter
 double gR = 0.6;   // 36/60 gear ratio
 double x = 0;
 
-double DRIVE_KP = 0.8;
-double MAX_CORRECTION = 5; // Maximum gyro correction in percent
-
 double clawCurrentLimit = 0.6;
 bool currentMax = false;
 
-// drive functions
+/*-------------------*/
+// Drive Functions
+/*-------------------*/
+
 void tankDrive(double lspeed, double rspeed, int wt)
 {
   lspeed = lspeed * 1;
@@ -93,30 +98,6 @@ void arcadeDrive()
   RightBack.spin(forward, rightSpeed, percent);
 }
 
-int clawIntake()
-{
-  while (true)
-  {
-    // 1. If the motor spikes past the limit, trip the latch permanently
-    if (!currentMax && claw.current(amp) > clawCurrentLimit)
-    {
-      currentMax = true;
-    }
-    // 2. Override the motor if tripped
-    if (currentMax)
-    {
-      claw.stop(brakeType::coast);
-    }
-    else
-    {
-      currentMax = false;
-    }
-    // Check every 20 milliseconds
-    wait(20, msec);
-  }
-  return 0;
-}
-
 void driveBrake()
 
 {
@@ -126,7 +107,26 @@ void driveBrake()
   RightBack.stop(brakeType::brake);
 }
 
-// display functions
+/*--------------------------------*/
+// Other Robot Functions(ex. lift)
+/*--------------------------------*/
+
+void liftUp()
+{
+  rightLift.spin(fwd, 75, pct);
+  leftLift.spin(fwd, 75, pct);
+}
+
+void liftDown()
+{
+  rightLift.spin(fwd, -75, pct);
+  leftLift.spin(fwd, -75, pct);
+}
+
+/*-------------------*/
+// Display Functions
+/*--------------------*/
+
 //  Health of the robot functions
 int YOFFSET = 20;   // First Line position
 int NewLineY = 20;  // Buffer Between Lines
@@ -232,7 +232,12 @@ int autonMax = 5;
 int autonMin = 0;
 bool selectingAuton = true;
 
-// basic auton functions
+/*-------------------------*/
+// Basic Auton Functions
+/*-------------------------*/
+
+double DRIVE_KP = 0.8;
+double MAX_CORRECTION = 5; // Maximum gyro correction in percent
 
 void drawGUI()
 {
@@ -471,7 +476,10 @@ void gyroTurn(double target)
   wait(100, msec);
 }
 
-// april tag functions
+/*-------------------------*/
+// April Tag Functions
+/*-------------------------*/
+
 void alignToAprilTag(int targetID, int targetWidth = 80)
 {
   // ---------------------------------------------------------
@@ -1627,6 +1635,7 @@ void usercontrol(void)
   while (1)
   {
 
+    // arcade - tank drive switchert
     bool buttonState = Controller1.ButtonY.pressing();
 
     if (buttonState && !lastButtonState)
@@ -1644,27 +1653,23 @@ void usercontrol(void)
       tankDrive(Controller1.Axis3.position(), Controller1.Axis2.position(), 10);
     }
 
+    // lift buttons
+
+    if (Controller1.ButtonR1.pressing())
+    {
+      liftUp();
+    }
+
+    if (Controller1.ButtonR2.pressing())
+    {
+      liftDown();
+    }
+
     count++;
     if (count == 25)
     {
       Display();
       count = 0;
-    }
-
-    if (!currentMax)
-    {
-      if (Controller1.ButtonUp.pressing())
-      {
-        claw.spin(forward, 75, percent);
-      }
-      else if (Controller1.ButtonDown.pressing())
-      {
-        claw.spin(forward, -75, percent);
-      }
-      else
-      {
-        claw.stop(brakeType::coast);
-      }
     }
 
     // This is the main execution loop for the user control program.
