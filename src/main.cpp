@@ -29,6 +29,9 @@ motor LeftBack(PORT10, ratio6_1, true);
 motor RightFront(PORT11, ratio6_1, false);
 motor RightBack(PORT3, ratio6_1, false);
 
+motor rightLift(PORT1, ratio18_1, false);
+motor leftLift(PORT2, ratio18_1, false);
+
 motor claw(PORT5, ratio18_1, false);
 
 struct NamedMotor  {
@@ -133,6 +136,27 @@ int clawIntake()
   }
   return 0;
 }
+
+/*--------------------------------*/
+// Other Robot Functions(ex. lift)
+/*--------------------------------*/
+
+void liftUp()
+{
+  rightLift.spin(fwd, 75, pct);
+  leftLift.spin(fwd, 75, pct);
+}
+
+void liftDown()
+{
+  rightLift.spin(fwd, -75, pct);
+  leftLift.spin(fwd, -75, pct);
+}
+
+/*-------------------*/
+// Display Functions
+/*--------------------*/
+
 
 void driveBrake()
 
