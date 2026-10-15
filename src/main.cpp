@@ -74,7 +74,7 @@ void tankDrive(double lspeed, double rspeed, int wt)
   LeftBack.spin(forward, lspeed, pct);
   RightFront.spin(forward, rspeed, pct);
   RightBack.spin(forward, rspeed, pct);
-  wait(10, msec);
+  wait(wt, msec);
 }
 
 void arcadeDrive()
