@@ -8,6 +8,7 @@
 /*----------------------------------------------------------------------------*/
 
 #include "vex.h"
+#include <cmath>
 
 using namespace vex;
 
@@ -23,6 +24,9 @@ brain Brain;
 inertial Gyro(PORT19);
 
 aivision AISensor(PORT6, aivision::ALL_TAGS);
+
+optical TogglePeek = optical(PORT4);
+motor flipper = motor(PORT12, ratio18_1, false);
 
 motor LeftFront(PORT20, ratio6_1, true);
 motor LeftBack(PORT10, ratio6_1, true);
@@ -47,6 +51,25 @@ NamedMotor driveMotors[] = {
   NAMED(RightFront),
   NAMED(RightBack),
 };
+
+
+enum class AllianceColor { Red, Blue, Yellow, None };
+
+AllianceColor OUR_COLOR = AllianceColor:: Red; // change to Blue before match
+const double RED_LOW_MAX   = 20;
+const double RED_HIGH_MIN  = 349;
+const double BLUE_MIN      = 190;
+const double BLUE_MAX      = 250;
+const double YELLOW_MIN    = 40;
+const double YELLOW_MAX    = 70;
+
+// Yellow hue range (starting estimate
+
+const int     COOLDOWN_MS   = 500;
+
+const double AUTO_FLIP_CUTOFF_S = 95;
+
+bool autoFlipOn = true;
 
 const int NUM_DRIVE_MOTORS = sizeof(driveMotors) / sizeof(driveMotors[0]);
 
@@ -83,10 +106,10 @@ void arcadeDrive()
   double turn = Controller1.Axis1.position(percent) * 0.9;
 
   // Deadzone
-  if (abs(throttle) < 5)
+  if (std::abs(throttle) < 5)
     throttle = 0;
 
-  if (abs(turn) < 5)
+  if (std::abs(turn) < 5)
     turn = 0;
 
   int leftSpeed = throttle + turn;
@@ -171,6 +194,62 @@ void driveBrake()
   RightBack.stop(brakeType::brake);
 }
 
+AllianceColor seenColor() {
+  if (!TogglePeek.isNearObject()) {
+    return AllianceColor::None;
+  }
+  double h = TogglePeek.hue();
+  if (h < RED_LOW_MAX || h > RED_HIGH_MIN) {
+    return AllianceColor::Red;
+  
+  }
+  if (h> BLUE_MIN && h < BLUE_MAX) {
+    return AllianceColor:: Blue;
+  }
+
+  if (h >= YELLOW_MIN && h <= YELLOW_MAX) {
+    return AllianceColor::Yellow;
+  }
+
+  return AllianceColor::None;
+}
+
+void flip() {
+  flipper.spinFor(forward, 180, degrees);
+}
+
+
+void opticalToggle(int targetColor) {
+    AllianceColor target;
+
+    switch (targetColor) {
+        case 1:
+            target = AllianceColor::Red;
+            break;
+        case 2:
+            target = AllianceColor::Blue;
+            break;
+        case 3:
+            target = AllianceColor::Yellow;
+            break;
+        default:
+            return; // Invalid color number
+    }
+
+    while (true) {
+        AllianceColor color = seenColor();
+
+        if (color == AllianceColor::None ||
+            color == target) {
+            wait(20, msec);
+            continue;
+        }
+
+        flip();
+        wait(COOLDOWN_MS, msec);
+    }
+}
+
 // display functions
 //  Health of the robot functions
 const int YOFFSET = 20;
@@ -216,7 +295,7 @@ void Display() {
   }
 }
 
-int autonSelect = 2;
+int autonSelect = 4;
 int autonMax = 5;
 int autonMin = 0;
 
@@ -1494,6 +1573,9 @@ void brakeNwait(int waitTime = 500)
 
 void pre_auton(void)
 {
+  TogglePeek.setLight(ledState::on);
+  TogglePeek.setLightPower(100, percent);
+  flipper.setStopping(hold);
 
   // All activities that occur before the competition starts
   // Example: clearing encoders, setting servo positions, ...
@@ -1593,6 +1675,10 @@ void autonomous(void)
     brakeNwait(500);
     inchDrive(-7, 30);
     break;
+  case 4:
+    //optical
+    opticalToggle(1);
+  break;
   }
 }
 
@@ -1611,10 +1697,40 @@ bool lastButtonState = false;
 
 void usercontrol(void)
 {
+
+timer driverTimer;
+driverTimer.reset();
+autoFlipOn = true;
+
+
   // User control code here, inside the loop
   int count = 0;
   while (1)
   {
+
+    double secondsIn = driverTimer.time(seconds);
+
+    if (Controller1.ButtonX.pressing()) {
+      autoFlipOn = !autoFlipOn;
+      waitUntil(!Controller1.ButtonX.pressing());
+    }
+
+    if (secondsIn > AUTO_FLIP_CUTOFF_S) {
+      autoFlipOn = false;
+    }
+
+    AllianceColor color = seenColor();
+    if (autoFlipOn && color != AllianceColor::None && color != OUR_COLOR) {
+      flip();
+      wait(COOLDOWN_MS, msec);
+    }
+
+    if (Controller1.ButtonR2.pressing()) {
+      flip();
+      waitUntil(!Controller1.ButtonR2.pressing());
+    }
+
+    wait(20, msec);
 
     bool buttonState = Controller1.ButtonY.pressing();
 
