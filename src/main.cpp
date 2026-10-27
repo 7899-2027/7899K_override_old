@@ -8,7 +8,6 @@
 /*----------------------------------------------------------------------------*/
 
 #include "vex.h"
-#include <cmath>
 
 using namespace vex;
 
@@ -21,66 +20,34 @@ controller Controller1;
 
 brain Brain;
 
-inertial Gyro(PORT19);
+inertial Gyro(PORT7);
 
-aivision AISensor(PORT6, aivision::ALL_TAGS);
+aivision AISensor(PORT19, aivision::ALL_TAGS);
 
-optical TogglePeek = optical(PORT4);
-motor flipper = motor(PORT12, ratio18_1, false);
-
-motor LeftFront(PORT20, ratio6_1, true);
+motor LeftFront(PORT11, ratio6_1, true);
 motor LeftBack(PORT10, ratio6_1, true);
-motor RightFront(PORT11, ratio6_1, false);
+motor RightFront(PORT20, ratio6_1, false);
 motor RightBack(PORT3, ratio6_1, false);
 
-motor rightLift(PORT1, ratio18_1, false);
-motor leftLift(PORT2, ratio18_1, false);
+motor rightLift(PORT8, ratio36_1, true);
+motor leftLift(PORT9, ratio36_1, false);
 
 motor claw(PORT5, ratio18_1, false);
 
-struct NamedMotor  {
-  motor &m;
-  const char *name; 
-};
+motor toggle(PORT12, ratio18_1, false);
 
-#define NAMED(mtr) { mtr, #mtr }
+digital_out clawPiston = digital_out(Brain.ThreeWirePort.A);
 
-NamedMotor driveMotors[] = {
-  NAMED(LeftFront),
-  NAMED(LeftBack),
-  NAMED(RightFront),
-  NAMED(RightBack),
-};
-
-
-enum class AllianceColor { Red, Blue, Yellow, None };
-
-AllianceColor OUR_COLOR = AllianceColor:: Red; // change to Blue before match
-const double RED_LOW_MAX   = 20;
-const double RED_HIGH_MIN  = 349;
-const double BLUE_MIN      = 190;
-const double BLUE_MAX      = 250;
-const double YELLOW_MIN    = 40;
-const double YELLOW_MAX    = 70;
-
-// Yellow hue range (starting estimate
-
-const int     COOLDOWN_MS   = 500;
-
-const double AUTO_FLIP_CUTOFF_S = 95;
-
-bool autoFlipOn = true;
-
-const int NUM_DRIVE_MOTORS = sizeof(driveMotors) / sizeof(driveMotors[0]);
-
-// FUNCTIONS
+/*--------------------------------*/
+// VARIABLES
+/*--------------------------------*/
 
 double pi = M_PI;
 double dia = 3.25; // wheel diameter
 double gR = 0.6;   // 36/60 gear ratio
 double x = 0;
 
-double DRIVE_KP = 0.8;
+double DRIVE_KP = 0.5;
 double MAX_CORRECTION = 5; // Maximum gyro correction in percent
 
 double clawCurrentLimit = 0.6;
@@ -88,7 +55,31 @@ bool currentMax = false;
 
 bool selectingAuton = true;
 
-// drive functions
+bool pistonStatus = false;
+
+// Selma's Code
+
+struct NamedMotor
+{
+  motor &m;
+  const char *name;
+};
+
+#define NAMED(mtr) {mtr, #mtr}
+
+NamedMotor driveMotors[] = {
+    NAMED(LeftFront),
+    NAMED(LeftBack),
+    NAMED(RightFront),
+    NAMED(RightBack),
+};
+
+const int NUM_DRIVE_MOTORS = sizeof(driveMotors) / sizeof(driveMotors[0]);
+
+/*--------------------------------*/
+// Drive Functions
+/*--------------------------------*/
+
 void tankDrive(double lspeed, double rspeed, int wt)
 {
   lspeed = lspeed * 1;
@@ -97,36 +88,35 @@ void tankDrive(double lspeed, double rspeed, int wt)
   LeftBack.spin(forward, lspeed, pct);
   RightFront.spin(forward, rspeed, pct);
   RightBack.spin(forward, rspeed, pct);
-  wait(wt, msec);
+  wait(10, msec);
 }
 
 void arcadeDrive()
 {
   double throttle = Controller1.Axis3.position(percent);
-  double turn = Controller1.Axis1.position(percent) * 0.9;
+  double turnInput = Controller1.Axis1.position(percent);
 
-  // Deadzone
-  if (std::abs(throttle) < 5)
+  // Deadzones are applied before calculating motor speeds.
+  if (fabs(throttle) < 5)
     throttle = 0;
+  if (fabs(turnInput) < 5)
+    turnInput = 0;
 
-  if (std::abs(turn) < 5)
-    turn = 0;
+  // Keep the original slower turning behavior when driving straight
+  // versus turning in place, but calculate speeds AFTER this choice.
+  double turn = (throttle != 0) ? turnInput * 0.93 : turnInput * 0.33;
 
-  int leftSpeed = throttle + turn;
-  int rightSpeed = throttle - turn;
-
-  if (throttle != 0)
+  // ButtonDown is the slow mode: reduce both forward and turning speed.
+  if (Controller1.ButtonDown.pressing())
   {
-    turn = Controller1.Axis1.position(percent) * 0.93; // turn while driving
-    int correction = 1;
-    leftSpeed += correction;
-  }
-  else if (throttle == 0)
-  {
-    turn = Controller1.Axis1.position(percent) * 0.33; // turn when there's no driving
+    throttle *= 0.3;
+    turn *= 0.3;
   }
 
-  // Clamp actual motor speeds
+  double leftSpeed = throttle + turn;
+  double rightSpeed = throttle - turn;
+
+  // Clamp actual motor speeds.
   leftSpeed = fmax(-100, fmin(100, leftSpeed));
   rightSpeed = fmax(-100, fmin(100, rightSpeed));
 
@@ -136,12 +126,62 @@ void arcadeDrive()
   RightBack.spin(forward, rightSpeed, percent);
 }
 
-int clawIntake()
+void driveBrake()
 {
   LeftFront.stop(brakeType::brake);
   LeftBack.stop(brakeType::brake);
   RightFront.stop(brakeType::brake);
   RightBack.stop(brakeType::brake);
+}
+
+/*--------------------------------*/
+// Other Robot Functions(ex. lift)
+/*--------------------------------*/
+
+void liftUp()
+{
+  if (!(Controller1.ButtonR2.pressing()) && (Controller1.ButtonR1.pressing()))
+  {
+    rightLift.spin(fwd, 100, pct);
+    leftLift.spin(fwd, 100, pct);
+  }
+  else
+  {
+    rightLift.stop();
+    leftLift.stop();
+  }
+}
+
+void liftDown()
+{
+  if (!(Controller1.ButtonR1.pressing()) && (Controller1.ButtonR2.pressing()))
+  {
+    rightLift.spin(fwd, -50, pct);
+    leftLift.spin(fwd, -50, pct);
+  }
+  else
+  {
+    rightLift.stop();
+    leftLift.stop();
+  }
+}
+
+// piston claw, actual code for claw
+void moveClaw()
+{
+  pistonStatus = !pistonStatus;
+  clawPiston.set(pistonStatus);
+  wait(500, msec);
+}
+
+void flipToggle(double toggleRPM = 200)
+{
+  toggle.spinFor(fwd, 180, degrees, toggleRPM, rpm, false);
+}
+
+// FOR BANSHEE CLAW, OLD
+/*int clawIntake()
+{
   while (true)
   {
     // 1. If the motor spikes past the limit, trip the latch permanently
@@ -163,99 +203,20 @@ int clawIntake()
   }
   return 0;
 }
-
-/*--------------------------------*/
-// Other Robot Functions(ex. lift)
-/*--------------------------------*/
-
-void liftUp()
-{
-  rightLift.spin(fwd, 75, pct);
-  leftLift.spin(fwd, 75, pct);
-}
-
-void liftDown()
-{
-  rightLift.spin(fwd, -75, pct);
-  leftLift.spin(fwd, -75, pct);
-}
+*/
 
 /*-------------------*/
 // Display Functions
 /*--------------------*/
 
-
-void driveBrake()
-
-{
-  LeftFront.stop(brakeType::brake);
-  LeftBack.stop(brakeType::brake);
-  RightFront.stop(brakeType::brake);
-  RightBack.stop(brakeType::brake);
-}
-
-AllianceColor seenColor() {
-  if (!TogglePeek.isNearObject()) {
-    return AllianceColor::None;
-  }
-  double h = TogglePeek.hue();
-  if (h < RED_LOW_MAX || h > RED_HIGH_MIN) {
-    return AllianceColor::Red;
-  
-  }
-  if (h> BLUE_MIN && h < BLUE_MAX) {
-    return AllianceColor:: Blue;
-  }
-
-  if (h >= YELLOW_MIN && h <= YELLOW_MAX) {
-    return AllianceColor::Yellow;
-  }
-
-  return AllianceColor::None;
-}
-
-void flip() {
-  flipper.spinFor(forward, 180, degrees);
-}
-
-
-void opticalToggle(int targetColor) {
-    AllianceColor target;
-
-    switch (targetColor) {
-        case 1:
-            target = AllianceColor::Red;
-            break;
-        case 2:
-            target = AllianceColor::Blue;
-            break;
-        case 3:
-            target = AllianceColor::Yellow;
-            break;
-        default:
-            return; // Invalid color number
-    }
-
-    while (true) {
-        AllianceColor color = seenColor();
-
-        if (color == AllianceColor::None ||
-            color == target) {
-            wait(20, msec);
-            continue;
-        }
-
-        flip();
-        wait(COOLDOWN_MS, msec);
-    }
-}
-
-// display functions
 //  Health of the robot functions
-const int YOFFSET = 20;
+int YOFFSET = 20;   // First Line position
+int NewLineY = 20;  // Buffer Between Lines
+int LineNumber = 0; // What row the line is on(increments every new motor)
 const int ROW_HEIGHT = 30;
 
-void MotorDisplay(int y, double curr, double temp) {
+void MotorDisplay(int y, double curr, double temp)
+{
   Brain.Screen.setFillColor(transparent);
   Brain.Screen.printAt(5, YOFFSET + y, "Current: %.1fA", curr);
   if (curr < 1)
@@ -278,28 +239,37 @@ void MotorDisplay(int y, double curr, double temp) {
   Brain.Screen.setFillColor(transparent);
 }
 
-void Display() {
+void Display()
+{
   // If the driver is still selecting an auton, don't draw motor stats over the GUI
-  if (selectingAuton) return;
+  if (selectingAuton)
+    return;
 
-  for (int i = 0; i < NUM_DRIVE_MOTORS; i++) {
+  for (int i = 0; i < NUM_DRIVE_MOTORS; i++)
+  {
     NamedMotor &nm = driveMotors[i];
     int y = 1 + i * ROW_HEIGHT;
 
-    if (nm.m.installed()) {
+    if (nm.m.installed())
+    {
       MotorDisplay(y, nm.m.current(amp), nm.m.temperature(celsius));
       Brain.Screen.printAt(300, YOFFSET + y, false, "%s", nm.name);
-    } else {
+    }
+    else
+    {
       Brain.Screen.printAt(5, YOFFSET + y, false, "%s Problem", nm.name);
     }
   }
 }
 
+// AUTON SELECT <---------------------------
 int autonSelect = 4;
 int autonMax = 5;
 int autonMin = 0;
 
-// basic auton functions
+/*------------------------*/
+// Basic Auton Functions
+/*-------------------------*/
 
 void drawGUI()
 {
@@ -475,37 +445,32 @@ void inchDrive(double target, int speed)
 }
 
 void gyroTurn(double target)
-
 {
-  // Compensation for drivetrain overshoot
-  if (target > 0)
-    target -= 5;
-  else
-    target += 5;
-
   Gyro.setRotation(0, degrees);
 
-  double accuracy = 1.0;
+  double error = target;
+  double heading = 0;
+
+  double kpFar = 0.65;
+  double kpNear = 0.45;
 
   double maxSpeed = 35;
-  double minSpeed = 8;
+  double minSpeed = 4;
+  double accuracy = 1.5;
 
-  double kpFar = 0.7;
-  double kpNear = 1.2;
+  int timeout = 0;
 
-  double error = target;
-
-  while (fabs(error) > accuracy)
+  while (fabs(error) > accuracy && timeout < 300)
   {
-    double heading = Gyro.rotation(degrees);
+    heading = Gyro.rotation(degrees);
     error = target - heading;
 
     double speed;
 
-    if (fabs(error) < 25)
-      speed = error * kpNear;
-    else
+    if (fabs(error) > 25)
       speed = error * kpFar;
+    else
+      speed = error * kpNear;
 
     if (speed > maxSpeed)
       speed = maxSpeed;
@@ -513,7 +478,8 @@ void gyroTurn(double target)
     if (speed < -maxSpeed)
       speed = -maxSpeed;
 
-    if (fabs(speed) < minSpeed)
+    // Minimum power only when outside the stopping tolerance
+    if (fabs(error) > accuracy && fabs(speed) < minSpeed)
     {
       if (speed > 0)
         speed = minSpeed;
@@ -528,17 +494,26 @@ void gyroTurn(double target)
     RightBack.spin(forward, -speed, pct);
 
     wait(10, msec);
+    timeout++;
   }
 
   LeftFront.stop(brake);
   LeftBack.stop(brake);
   RightFront.stop(brake);
   RightBack.stop(brake);
-
-  wait(100, msec);
 }
 
-// april tag functions
+void autonLift(double liftDistance, double liftSpeed = 120)
+{
+
+  rightLift.spinFor(fwd, liftDistance, degrees, liftSpeed, rpm, false);
+  leftLift.spinFor(fwd, liftDistance, degrees, liftSpeed, rpm, false);
+}
+
+/*---------------------------*/
+// April Tag Auton Functions
+/*---------------------------*/
+
 void alignToAprilTag(int targetID, int targetWidth = 80)
 {
   // ---------------------------------------------------------
@@ -548,11 +523,11 @@ void alignToAprilTag(int targetID, int targetWidth = 80)
   const double cameraCenterX = 158.0;
 
   // Normal driving
-  const double driveSpeed = 35;
+  const double driveSpeed = 25;
 
   // Rotation speeds
-  const double turnKp = 0.45;
-  const double maxTurnSpeed = 30;
+  const double turnKp = 0.2; // turning sensitivity
+  const double maxTurnSpeed = 20;
   const double minTurnSpeed = 6;
 
   // How accurately the tag must be centered.
@@ -569,8 +544,23 @@ void alignToAprilTag(int targetID, int targetWidth = 80)
 
   bool finalAlignment = false;
 
+  // Safety timeout prevents autonomous from hanging forever if the
+  // tag stays visible but the robot cannot reach the target/alignment.
+  timer alignmentTimer;
+  alignmentTimer.reset();
+  const int alignmentTimeoutMs = 8000;
+
   while (true)
   {
+    if (alignmentTimer.time(msec) >= alignmentTimeoutMs)
+    {
+      driveBrake();
+      Brain.Screen.clearScreen();
+      Brain.Screen.printAt(10, 30, "APRILTAG ALIGN TIMEOUT");
+      Brain.Screen.printAt(10, 60, "ID: %d", targetID);
+      return;
+    }
+
     // ---------------------------------------------------------
     // TAKE VISION SNAPSHOT
     // ---------------------------------------------------------
@@ -812,14 +802,13 @@ void alignToAprilTag(int targetID, int targetWidth = 80)
       speed = 15;
 
     // ---------------------------------------------------------
-    // BACKWARD APPROACH
+    // FORWARD APPROACH
     // ---------------------------------------------------------
 
-    double leftSpeed =
-        -speed + correction;
-
-    double rightSpeed =
-        -speed - correction;
+    // Drive forward while applying opposite corrections to the
+    // left and right sides to keep the tag centered.
+    double leftSpeed = speed + correction;
+    double rightSpeed = speed - correction;
 
     leftSpeed =
         fmax(-100, fmin(100, leftSpeed));
@@ -930,6 +919,12 @@ void turnToAprilTag(int targetID, int direction, double speed)
   int stableFrames = 0;
   int lostFrames = 0;
 
+  // Bound the entire search/alignment routine so autonomous can continue
+  // if the requested tag never reaches the alignment tolerance.
+  timer turnTimer;
+  turnTimer.reset();
+  const int turnTimeoutMs = 8000;
+
   // Make sure direction is valid.
   if (direction != 1 && direction != -1)
   {
@@ -955,6 +950,15 @@ void turnToAprilTag(int targetID, int direction, double speed)
 
   while (true)
   {
+    if (turnTimer.time(msec) >= turnTimeoutMs)
+    {
+      driveBrake();
+      Brain.Screen.clearScreen();
+      Brain.Screen.printAt(10, 30, "TAG TURN TIMEOUT");
+      Brain.Screen.printAt(10, 60, "ID: %d", targetID);
+      return;
+    }
+
     // -------------------------------------------------------
     // TAKE SNAPSHOT
     // -------------------------------------------------------
@@ -1248,6 +1252,10 @@ void centerAprilTag(int targetID)
   int stableFrames = 0;
   int lostFrames = 0;
 
+  timer centerTimer;
+  centerTimer.reset();
+  const int centerTimeoutMs = 8000;
+
   // =========================================================
   // START STOPPED
   // =========================================================
@@ -1262,6 +1270,15 @@ void centerAprilTag(int targetID)
 
   while (true)
   {
+    if (centerTimer.time(msec) >= centerTimeoutMs)
+    {
+      driveBrake();
+      Brain.Screen.clearScreen();
+      Brain.Screen.printAt(10, 30, "TAG CENTER TIMEOUT");
+      Brain.Screen.printAt(10, 60, "ID: %d", targetID);
+      return;
+    }
+
     // -------------------------------------------------------
     // SNAPSHOT
     // -------------------------------------------------------
@@ -1450,14 +1467,10 @@ void centerAprilTag(int targetID)
         turnSpeed = maxNearSpeed;
       }
 
-      // Don't force a minimum speed if we're extremely close.
-      //
-      // This is important because forcing 2-5% at tiny errors
-      // is what causes hunting/oscillation.
-      if (turnSpeed < minTurnSpeed)
-      {
-        turnSpeed = minTurnSpeed;
-      }
+      // Intentionally do not force a minimum speed in the near zone.
+      // A minimum here can make the robot overshoot and oscillate.
+      // If the correction is too small to move the drivetrain, the
+      // next camera reading will determine whether another correction is needed.
     }
 
     // =======================================================
@@ -1573,9 +1586,6 @@ void brakeNwait(int waitTime = 500)
 
 void pre_auton(void)
 {
-  TogglePeek.setLight(ledState::on);
-  TogglePeek.setLightPower(100, percent);
-  flipper.setStopping(hold);
 
   // All activities that occur before the competition starts
   // Example: clearing encoders, setting servo positions, ...
@@ -1629,56 +1639,136 @@ void autonomous(void)
     break;
 
   case 1:
-    // jayden test
-    inchDrive(40, 50);
-    driveBrake();
-    gyroTurn(-45);
+    // AUTON RED LOADER SIDE
+    flipToggle();
     wait(1000, msec);
-    inchDrive(25, 50);
-    driveBrake();
-    gyroTurn(-45);
+    flipToggle();
+    // flip toggle
+    wait(500, msec);
+    inchDrive(11, 30);
+    brakeNwait(200);
+    autonLift(160);
+    brakeNwait(500);
+    gyroTurn(60);
+    brakeNwait(200);
+    inchDrive(17, 30);
+    alignToAprilTag(2);
+    autonLift(-140);
     wait(1000, msec);
-    inchDrive(40, 50);
+    moveClaw();
+    wait(250, msec);
+    inchDrive(-13, 30);
+    // end of scoring one pin
+    /* for picking up pin & cup on wall, not being used currently
+    autonLift(65);
+    brakeNwait(250);
+    gyroTurn(32);
+    brakeNwait(500);
+    inchDrive(24, 30);
+    moveClaw();
+    brakeNwait(500);
+    autonLift(245);
+    wait(500, msec);
+    gyroThenVision(210, 2);
+    inchDrive(10, 30);
 
+    // to grab pin on border
+    gyroTurn(-38);
+    brakeNwait(500);
+    inchDrive(23.5, 15);
+    moveClaw();
+    inchDrive(1, 15);
+    autonLift(150);
+    // picks up pin and moves lift
+    gyroTurn(75);
+    brakeNwait(500);
+    inchDrive(15, 30);
+    autonLift(-140);
+    moveClaw();
+    inchDrive(-7, 15);
+    // end of scoring second pin
+    */
     break;
   case 2:
-    gyroThenVision(-90, 3);
+    // AUTON RED OTHER SIDE
+    flipToggle();
+    wait(1000, msec);
+    flipToggle();
+    // flip toggle
+    wait(500, msec);
+    inchDrive(15, 30);
+    brakeNwait(200);
+    autonLift(250);
+    brakeNwait(500);
+    gyroTurn(-67);
+    brakeNwait(300);
+    inchDrive(17.5, 30);
+    autonLift(-200);
+    wait(1000, msec);
+    moveClaw();
+    wait(250, msec);
+    inchDrive(-10, 15);
+    // end of scoring one pin
+    /*
+    autonLift(65);
+    brakeNwait(250);
+    gyroTurn(-32);
+    brakeNwait(500);
+    inchDrive(24, 30);
+    moveClaw();
+    brakeNwait(500);
+    autonLift(245);
+    wait(500, msec);
+    gyroThenVision(210, 2);
+    inchDrive(10, 30);
+
+
+    // to grab pin on border
+    gyroTurn(37.5);
+    brakeNwait(500);
+    inchDrive(22.5, 15);
+    moveClaw();
+    inchDrive(1, 15);
+    autonLift(150);
+    // picks up pin and moves lift
+    gyroTurn(-115);
+    brakeNwait(500);
+    inchDrive(15, 30);
+    autonLift(-140);
+    moveClaw();
+    inchDrive(-7, 15);
+    // end of scoring second pin
+    */
     break;
   case 3:
-    // first auton using 1st full asian strat
-    doubleTurn();
-    inchDrive(-14, 50);
+    // skills 10/17
+    flipToggle();
+    wait(1000, msec);
+    flipToggle();
+    // flip toggle
+    wait(500, msec);
+    inchDrive(11, 30);
+    brakeNwait(200);
+    autonLift(160);
     brakeNwait(500);
-    gyroTurn(-91);
-    brakeNwait(500);
-    inchDrive(-13, 40);
-    alignToAprilTag(3, 80);
-    // score
-    brakeNwait(500);
-    inchDrive(14, 40);
-    brakeNwait(500);
-    gyroTurn(-40);
-    inchDrive(-14, 40);
-    // at wall
-    brakeNwait(500);
-    gyroTurn(40);
-    brakeNwait(500);
-    inchDrive(-6, 40);
-    brakeNwait();
-    gyroTurn(-90);
-    inchDrive(-4, 40);
-    brakeNwait(500);
-    inchDrive(2, 30);
-    brakeNwait(500);
-    // turn around
-    gyroTurn(180);
-    brakeNwait(500);
-    inchDrive(-7, 30);
+    gyroTurn(63);
+    brakeNwait(200);
+    inchDrive(17, 30);
+    alignToAprilTag(2);
+    autonLift(-140);
+    wait(1000, msec);
+    moveClaw();
+    wait(250, msec);
+    inchDrive(-8, 30);
+    gyroTurn(-60);
+    inchDrive(29, 30);
     break;
+
   case 4:
-    //optical
-    opticalToggle(1);
-  break;
+    // ai vision test
+    gyroThenVision(80, 2);
+    alignToAprilTag(2);
+    break;
   }
 }
 
@@ -1697,40 +1787,14 @@ bool lastButtonState = false;
 
 void usercontrol(void)
 {
-
-timer driverTimer;
-driverTimer.reset();
-autoFlipOn = true;
-
-
   // User control code here, inside the loop
   int count = 0;
   while (1)
   {
 
-    double secondsIn = driverTimer.time(seconds);
-
-    if (Controller1.ButtonX.pressing()) {
-      autoFlipOn = !autoFlipOn;
-      waitUntil(!Controller1.ButtonX.pressing());
-    }
-
-    if (secondsIn > AUTO_FLIP_CUTOFF_S) {
-      autoFlipOn = false;
-    }
-
-    AllianceColor color = seenColor();
-    if (autoFlipOn && color != AllianceColor::None && color != OUR_COLOR) {
-      flip();
-      wait(COOLDOWN_MS, msec);
-    }
-
-    if (Controller1.ButtonR2.pressing()) {
-      flip();
-      waitUntil(!Controller1.ButtonR2.pressing());
-    }
-
-    wait(20, msec);
+    /*---------------------------*/
+    // Drive Code
+    /*---------------------------*/
 
     bool buttonState = Controller1.ButtonY.pressing();
 
@@ -1749,16 +1813,47 @@ autoFlipOn = true;
       tankDrive(Controller1.Axis3.position(), Controller1.Axis2.position(), 10);
     }
 
-  // lift buttons
+    /*---------------------------*/
+    // Lift Buttons
+    /*---------------------------*/
 
-    if (Controller1.ButtonR1.pressing())
+    if (Controller1.ButtonR1.pressing() &&
+        !Controller1.ButtonR2.pressing())
     {
-      liftUp();
+      // Lift up while R1 is held, unless R2 is pressed
+      rightLift.spin(fwd, 100, pct);
+      leftLift.spin(fwd, 100, pct);
+    }
+    else if (Controller1.ButtonR2.pressing() &&
+             !Controller1.ButtonR1.pressing())
+    {
+      // Lift down while R2 is held, unless R1 is pressed
+      rightLift.spin(fwd, -100, pct);
+      leftLift.spin(fwd, -100, pct);
+    }
+    else
+    {
+      // Stop when neither button is held, or both are held
+      rightLift.stop(brake);
+      leftLift.stop(brake);
     }
 
-    if (Controller1.ButtonR2.pressing())
+    /*---------------------------*/
+    // Claw Button
+    /*---------------------------*/
+
+    if (Controller1.ButtonL2.pressing())
     {
-      liftDown();
+      moveClaw();
+    }
+
+    /*---------------------------*/
+    // Toggle Button
+    /*---------------------------*/
+
+    if (Controller1.ButtonL1.pressing())
+    {
+      flipToggle();
     }
 
     count++;
@@ -1768,6 +1863,7 @@ autoFlipOn = true;
       count = 0;
     }
 
+    /* OLD CODE FOR BANSHEE
     if (!currentMax)
     {
       if (Controller1.ButtonUp.pressing())
@@ -1783,6 +1879,7 @@ autoFlipOn = true;
         claw.stop(brakeType::coast);
       }
     }
+    */
 
     // This is the main execution loop for the user control program.
     // Each time through the loop your program should update motor + servo
